@@ -688,7 +688,8 @@
       <div><label class="block text-xs font-bold mb-1 text-slate-600 dark:text-slate-300">Usuario</label><input id="login-user" required autocomplete="username" class="w-full border rounded-xl p-3 bg-white dark:bg-slate-800 dark:border-slate-700 text-sm" placeholder="Tu usuario"></div>
       <div><label class="block text-xs font-bold mb-1 text-slate-600 dark:text-slate-300">Contraseña</label><input id="login-pass" type="password" required autocomplete="current-password" class="w-full border rounded-xl p-3 bg-white dark:bg-slate-800 dark:border-slate-700 text-sm" placeholder="Tu contraseña"></div>
       <p id="login-error" class="hidden text-xs text-rose-600 font-semibold">Usuario o contraseña incorrectos.</p>
-      <button class="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl p-3 font-bold text-sm">Entrar</button>
+      <div id="login-loading" class="hidden text-center text-xs font-semibold text-indigo-600 dark:text-indigo-300"><i class="fa-solid fa-circle-notch fa-spin mr-2"></i>Consultando usuario y datos en Google Sheets…</div>
+      <button id="login-submit" class="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-wait text-white rounded-xl p-3 font-bold text-sm"><span id="login-submit-label">Entrar</span></button>
       <p class="text-[10px] text-slate-400 text-center">Tras inicializar Apps Script: <b>admin</b> / <b>Demo2026!!</b></p>
     </form>
   </div>
@@ -813,7 +814,8 @@
     let comerciales = [];
 
     function normalizeClientsList(list) {
-      return (list || []).map((c, idx) => ({ id: c.id || ('C' + (idx + 1)), nombre: c.nombre || 'Cliente', comercialAsignado: c.comercialAsignado || '', sector: c.sector || '', imagen: c.imagen || '', contacto: c.contacto || '', email: c.email || '', telefono: c.telefono || '', ubicacion: c.ubicacion || '', notas: c.notas || '' }));
+      const str=v=>v===undefined||v===null?'':String(v);
+      return (list || []).map((c, idx) => ({ id: str(c.id)||('C'+(idx+1)), nombre: str(c.nombre)||'Cliente', comercialAsignado: str(c.comercialAsignado), sector: str(c.sector), imagen: str(c.imagen), contacto: str(c.contacto), email: str(c.email), telefono: str(c.telefono), ubicacion: str(c.ubicacion), notas: str(c.notas) }));
     }
 
     let clientesDB = [];
@@ -826,11 +828,15 @@
     }
 
     function normalizeProjectsList(list) {
-      return list.map(p => ({
+      const str=v=>v===undefined||v===null?'':String(v);
+      const bool=v=>v===true||['true','1','yes','sí','si'].includes(String(v).trim().toLowerCase());
+      return (list||[]).map(p => ({
         ...p,
+        id:str(p.id), codigoEstudio:str(p.codigoEstudio), codigoOT:str(p.codigoOT), cliente:str(p.cliente), comercial:str(p.comercial), titulo:str(p.titulo), fechaEntrega:str(p.fechaEntrega),
+        maquinas:p.maquinas&&typeof p.maquinas==='object'&&!Array.isArray(p.maquinas)?p.maquinas:{},
         deptoLider: normalizeDeptName(p.deptoLider),
         deptoApoyo: normalizeDeptName(p.deptoApoyo),
-        urgente: Boolean(p.urgente)
+        requiereApoyo:bool(p.requiereApoyo),urgente:bool(p.urgente),finalizado:bool(p.finalizado)
       }));
     }
 
@@ -1216,6 +1222,7 @@
         'perfil': ['Mi perfil', 'Personaliza tu imagen, nombre y contraseña']
       };
 
+      if(!headers[view]){console.error('Vista desconocida:',view);return;}
       document.getElementById('view-title').innerText = headers[view][0];
       document.getElementById('view-subtitle').innerText = headers[view][1];
       renderCurrentView();
@@ -3366,10 +3373,16 @@
     let appUsers = [];
     let currentUser = null;
     let authToken = '';
+    function setLoginLoading(isLoading){
+      const button=document.getElementById('login-submit'),label=document.getElementById('login-submit-label'),status=document.getElementById('login-loading');
+      if(button)button.disabled=isLoading;if(label)label.textContent=isLoading?'Consultando…':'Entrar';if(status)status.classList.toggle('hidden',!isLoading);
+    }
     async function loginLocal(e){
       e.preventDefault(); const username=document.getElementById('login-user').value.trim(); const password=document.getElementById('login-pass').value;
+      const error=document.getElementById('login-error');if(error){error.classList.add('hidden');error.textContent='';}setLoginLoading(true);
       try { const result=await api('login',{username,password}); authToken=result.token; currentUser=result.user; appUsers=result.users||[]; notifications=result.notifications||[]; await refreshState(); document.getElementById('login-screen').classList.add('hidden'); document.getElementById('login-pass').value=''; const head=document.getElementById('view-subtitle'); if(head)head.innerText += ` · Sesión: ${currentUser.name} (${currentUser.role})`; applyRoleAccess(); refreshProfileHeader(); updateNotificationCenter(); renderCurrentView(); }
-      catch(err){document.getElementById('login-error').classList.remove('hidden'); document.getElementById('login-error').textContent=err.message||'Usuario o contraseña incorrectos';}
+      catch(err){if(error){error.classList.remove('hidden');error.textContent=err.message||'Usuario o contraseña incorrectos';}}
+      finally{setLoginLoading(false);}
     }
     async function refreshState(){const result=await api('load');projects=normalizeProjectsList(result.projects||[]);clientesDB=normalizeClientsList(result.clients||[]);comerciales=result.comerciales||[];appUsers=result.users||appUsers;notifications=result.notifications||notifications;updateBadges();updateNotificationCenter();}
     async function refreshFromSheets(){
