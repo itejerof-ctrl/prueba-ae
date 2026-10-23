@@ -2,7 +2,7 @@
 <html lang="es" class="light">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>ADAEQUO PLV v4.1 · Intranet Operativa de Estudios, OTs y Kanbans</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -52,6 +52,33 @@
     body {
       font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
     }
+    html, body {
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+    }
+    .app-shell {
+      height: 100vh;
+      height: 100dvh;
+      min-height: 0;
+    }
+    #app-sidebar {
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    main {
+      min-height: 0;
+    }
+    #workspace {
+      min-height: 0;
+      overscroll-behavior-y: contain;
+    }
+    @media (max-width: 1023px) {
+      .app-shell {
+        padding-top: env(safe-area-inset-top, 0px);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+      }
+    }
     .font-mono-code {
       font-family: 'JetBrains Mono', monospace;
     }
@@ -97,7 +124,7 @@
     }
   </style>
 </head>
-<body class="bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100 h-screen flex overflow-hidden antialiased selection:bg-indigo-600 selection:text-white transition-colors duration-200">
+<body class="app-shell bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex overflow-hidden antialiased selection:bg-indigo-600 selection:text-white transition-colors duration-200">
 
   <!-- ==================== OVERLAY MÓVIL PARA SIDEBAR ==================== -->
   <div id="sidebar-backdrop" onclick="closeMobileSidebar()" class="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-30 hidden lg:hidden transition-opacity"></div>
@@ -851,7 +878,9 @@
         projects = normalizeProjectsList(result.projects || []);
         clientesDB = normalizeClientsList(result.clients || []);
         comerciales = result.comerciales || [];
+        if(Array.isArray(result.notifications))notifications=result.notifications;
         updateBadges();
+        updateNotificationCenter();
         savingState = false;
         renderCurrentView();
       } catch (err) { showToast('No se pudo guardar en Google Sheets: ' + err.message); try { await refreshState(); } catch (_) { logoutLocal(); } savingState = false; renderCurrentView(); }
@@ -953,18 +982,11 @@
     function readNotification(id){const items=getMyNotifications().map(n=>n.id===id?{...n,read:true}:n);saveMyNotifications(items);}
     function markAllNotificationsRead(){saveMyNotifications(getMyNotifications().map(n=>({...n,read:true})));showToast('Todas las notificaciones marcadas como leídas');}
     function clearAllNotifications(){if(!confirm('¿Quieres borrar todo el historial de notificaciones de tu usuario?'))return;saveMyNotifications([]);showToast('Historial de notificaciones borrado');}
-    function addPersistentNotification(title,message,p){
-      if(!currentUser)return;
-      const now=new Date();const items=getMyNotifications();
-      items.unshift({id:'ntf-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),title,message,projectId:p?.id||'',time:now.toISOString(),timeLabel:now.toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'}),read:false});
-      saveMyNotifications(items);
-    }
     function notifyStageDone(p, stage) {
       const label = p.fase === 'OT' ? 'OT #' + p.codigoOT : 'Estudio #' + p.codigoEstudio;
       const message = `${label} · ${p.cliente}: ${stage} completado`;
-      addPersistentNotification('Etapa completada',message,p);
       showToast(message);
-      if ('Notification' in window && Notification.permission === 'granted') {
+      if (document.visibilityState !== 'visible' && 'Notification' in window && Notification.permission === 'granted') {
         try {
           new Notification('ADAEQUO PLV · Etapa completada', {
             body: message,
@@ -3384,13 +3406,26 @@
       catch(err){if(error){error.classList.remove('hidden');error.textContent=err.message||'Usuario o contraseña incorrectos';}}
       finally{setLoginLoading(false);}
     }
-    async function refreshState(){const result=await api('load');projects=normalizeProjectsList(result.projects||[]);clientesDB=normalizeClientsList(result.clients||[]);comerciales=result.comerciales||[];appUsers=result.users||appUsers;notifications=result.notifications||notifications;updateBadges();updateNotificationCenter();}
+    async function refreshState({notifyIncoming=false}={}){const previousIds=new Set(notifications.map(n=>n.id));const result=await api('load');projects=normalizeProjectsList(result.projects||[]);clientesDB=normalizeClientsList(result.clients||[]);comerciales=result.comerciales||[];appUsers=result.users||appUsers;notifications=result.notifications||notifications;updateBadges();updateNotificationCenter();if(notifyIncoming)notifyNewNotifications(previousIds);}
+    function notifyNewNotifications(previousIds){
+      notifications.filter(n=>n&&!n.read&&!previousIds.has(n.id)).forEach(n=>{
+        if(document.visibilityState==='visible')showToast(n.message||n.title||'Nueva notificación');
+        else if('Notification' in window&&Notification.permission==='granted'){try{new Notification(n.title||'ADAEQUO PLV',{body:n.message||'Nueva actualización',tag:String(n.id)});}catch(_){}}
+      });
+    }
+    let notificationPollRunning=false;
+    async function pollNotifications(){
+      if(!authToken||notificationPollRunning)return;notificationPollRunning=true;
+      try{const oldIds=new Set(notifications.map(n=>n.id));notifications=await api('notifications');updateNotificationCenter();notifyNewNotifications(oldIds);}
+      catch(err){if(/sesión|desactivado/i.test(err.message||''))logoutLocal();}
+      finally{notificationPollRunning=false;}
+    }
     async function refreshFromSheets(){
       if(!authToken){showToast('Inicia sesión para actualizar los datos');return;}
       if(savingState){showToast('Espera a que termine el guardado actual');return;}
       const button=document.getElementById('refresh-data-btn'),icon=document.getElementById('refresh-data-icon');
       if(button)button.disabled=true;if(icon)icon.classList.add('fa-spin');
-      try{await refreshState();renderCurrentView();showToast('Datos actualizados desde Google Sheets');}
+      try{await refreshState({notifyIncoming:true});renderCurrentView();showToast('Datos actualizados desde Google Sheets');}
       catch(err){showToast('No se pudieron actualizar los datos: '+err.message);if(/sesión|desactivado/i.test(err.message||''))logoutLocal();}
       finally{if(button)button.disabled=false;if(icon)icon.classList.remove('fa-spin');}
     }
@@ -3482,7 +3517,9 @@
     // Inicializar la aplicación en el Dashboard
     switchView('dashboard');
     // No se restaura ninguna sesión desde almacenamiento local: al recargar, se vuelve a autenticar.
-    setInterval(async()=>{if(!authToken||savingState)return;try{await refreshState();renderCurrentView();}catch(err){if(/sesión|desactivado/i.test(err.message||''))logoutLocal();}},60000);
+    setInterval(async()=>{if(!authToken||savingState)return;try{await refreshState({notifyIncoming:true});renderCurrentView();}catch(err){if(/sesión|desactivado/i.test(err.message||''))logoutLocal();}},60000);
+    setInterval(pollNotifications,20000);
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pollNotifications();});
   </script>
 </body>
 </html>
