@@ -11,13 +11,20 @@
     const apiFrames = new Map();
     function api(action, payload = {}) {
       if (!API_URL.startsWith('https://script.google.com/')) return Promise.reject(new Error('Configura la URL del Web App de Apps Script en API_URL.'));
-      const requestId = 'r' + Date.now() + Math.random().toString(36).slice(2);
+      const nonce = window.crypto?.randomUUID ? window.crypto.randomUUID().replace(/-/g,'') : (Date.now() + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2));
+      const requestId = 'r' + nonce;
       return new Promise((resolve, reject) => {
         const frame = document.createElement('iframe'); frame.name = 'plv_api_' + requestId; frame.style.display = 'none'; frame.setAttribute('aria-hidden','true');
         let done = false;
         const cleanup = () => { if (done) return; done = true; window.removeEventListener('message', onMessage); clearTimeout(timer); apiFrames.delete(requestId); frame.remove(); };
-        const onMessage = event => { if (event.source !== frame.contentWindow || event.data?.requestId !== requestId) return; cleanup(); if (event.data.ok) resolve(event.data.result); else reject(new Error(event.data.error || 'Error del servidor')); };
-        const timer = setTimeout(() => { cleanup(); reject(new Error('Apps Script no respondió. Comprueba la URL y el despliegue.')); }, 30000);
+        // HtmlService anida la respuesta en un iframe de Google, por lo que event.source
+        // no es necesariamente el iframe exterior que recibe el formulario.
+        const onMessage = event => {
+          const googleOrigin = event.origin === 'null' || event.origin === 'https://script.google.com' || /^https:\/\/([a-z0-9-]+\.)*googleusercontent\.com$/i.test(event.origin);
+          if (!googleOrigin || event.data?.requestId !== requestId) return;
+          cleanup(); if (event.data.ok) resolve(event.data.result); else reject(new Error(event.data.error || 'Error del servidor'));
+        };
+        const timer = setTimeout(() => { cleanup(); reject(new Error('Apps Script no respondió. Comprueba que la URL termine en /exec, que la implementación esté activa y que permita el acceso necesario.')); }, 60000);
         apiFrames.set(requestId, frame); window.addEventListener('message', onMessage); document.body.appendChild(frame);
         const form = document.createElement('form'); form.method = 'POST'; form.action = API_URL; form.target = frame.name; form.style.display = 'none';
         const fields = { action, requestId, token: authToken || '', payload: JSON.stringify(payload) };
