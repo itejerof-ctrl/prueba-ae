@@ -7,16 +7,18 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     // URL de implementación de Apps Script. Sustituir al desplegar; no incluir secretos aquí.
-    const API_URL = 'https://script.google.com/macros/s/AKfycbzdhtyN_OUthnH4Npm0t3HkkGkQXsb-s7Z_999oiWHGW2Hfcg-HzzjA_OdXc9F-2gr_tg/exec';
+    const API_URL = 'PEGA_AQUI_URL_WEB_APP_APPS_SCRIPT';
     const apiFrames = new Map();
     function api(action, payload = {}) {
       if (!API_URL.startsWith('https://script.google.com/')) return Promise.reject(new Error('Configura la URL del Web App de Apps Script en API_URL.'));
+      const tracksSaving=!['login','logout','load','notifications'].includes(action);
+      if(tracksSaving)beginSaving();
       const nonce = window.crypto?.randomUUID ? window.crypto.randomUUID().replace(/-/g,'') : (Date.now() + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2));
       const requestId = 'r' + nonce;
       return new Promise((resolve, reject) => {
         const frame = document.createElement('iframe'); frame.name = 'plv_api_' + requestId; frame.style.display = 'none'; frame.setAttribute('aria-hidden','true');
         let done = false;
-        const cleanup = () => { if (done) return; done = true; window.removeEventListener('message', onMessage); clearTimeout(timer); apiFrames.delete(requestId); frame.remove(); };
+        const cleanup = () => { if (done) return; done = true; window.removeEventListener('message', onMessage); clearTimeout(timer); apiFrames.delete(requestId); frame.remove(); if(tracksSaving)endSaving(); };
         // HtmlService anida la respuesta en un iframe de Google, por lo que event.source
         // no es necesariamente el iframe exterior que recibe el formulario.
         const onMessage = event => {
@@ -724,6 +726,14 @@
   <!-- Contenedor de Notificaciones Toast -->
   <div id="toast-container" class="fixed bottom-4 right-4 z-50 space-y-2 pointer-events-none max-w-[90vw]"></div>
 
+  <!-- Indicador de guardado en Google Sheets -->
+  <div id="saving-overlay" class="fixed inset-0 z-[90] hidden items-center justify-center bg-slate-950/35 backdrop-blur-[2px] p-4" role="status" aria-live="polite" aria-atomic="true">
+    <div class="flex min-w-52 items-center gap-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-6 py-5 shadow-2xl">
+      <i class="fa-solid fa-circle-notch animate-spin text-xl text-indigo-600 dark:text-indigo-400" aria-hidden="true"></i>
+      <span class="text-sm font-bold text-slate-800 dark:text-slate-100">Guardando cambios…</span>
+    </div>
+  </div>
+
   <!-- ==================== LÓGICA JAVASCRIPT ==================== -->
   <script>
     // Constantes del flujo operativo
@@ -870,9 +880,22 @@
     let projects = [];
 
     let savingState = false;
+    let saveRequestsInFlight = 0;
+    function beginSaving(){
+      saveRequestsInFlight++;
+      savingState=true;
+      const overlay=document.getElementById('saving-overlay');
+      if(overlay){overlay.classList.remove('hidden');overlay.classList.add('flex');}
+    }
+    function endSaving(){
+      saveRequestsInFlight=Math.max(0,saveRequestsInFlight-1);
+      savingState=saveRequestsInFlight>0;
+      const overlay=document.getElementById('saving-overlay');
+      if(overlay){overlay.classList.toggle('hidden',!savingState);overlay.classList.toggle('flex',savingState);}
+    }
     async function saveState() {
       if (!authToken) return;
-      savingState = true;
+      const previousNotificationIds=new Set(notifications.map(n=>n.id));
       try {
         const result = await api('saveState', { projects, clients: clientesDB, comerciales });
         projects = normalizeProjectsList(result.projects || []);
@@ -881,10 +904,9 @@
         if(Array.isArray(result.notifications))notifications=result.notifications;
         updateBadges();
         updateNotificationCenter();
-        savingState = false;
-        renderCurrentView();
-      } catch (err) { showToast('No se pudo guardar en Google Sheets: ' + err.message); try { await refreshState(); } catch (_) { logoutLocal(); } savingState = false; renderCurrentView(); }
-      finally { savingState = false; }
+        notifyNewNotifications(previousNotificationIds);
+      } catch (err) { showToast('No se pudo guardar en Google Sheets: ' + err.message); try { await refreshState(); } catch (_) { logoutLocal(); } }
+      finally { renderCurrentView(); }
     }
 
     initTheme();
@@ -948,16 +970,32 @@
     }
 
     // ==================== NOTIFICACIONES Y EVENTOS GLOBALES ====================
+    function syncNotificationButton(){
+      const btn=document.getElementById('notify-enable');if(!btn)return;
+      if('Notification' in window&&Notification.permission==='granted'){
+        btn.innerHTML='<i class="fa-solid fa-bell text-emerald-500"></i> <span class="hidden md:inline">Activos</span>';
+        btn.className='px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5';
+        btn.title='Notificaciones del sistema activadas en este navegador';
+      }else{
+        btn.innerHTML='<i class="fa-regular fa-bell"></i><span class="hidden md:inline">Avisos escritorio</span>';
+        btn.className='px-3 py-2 rounded-xl text-xs font-semibold bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/70 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/60 transition cursor-pointer flex items-center gap-1.5';
+        btn.title='Activar notificaciones de escritorio';
+      }
+    }
     async function enableNotifications() {
       if (!('Notification' in window)) {
         showToast('Este navegador no admite notificaciones de escritorio.');
         return;
       }
-      const permission = await Notification.requestPermission();
+      if(Notification.permission==='denied'){
+        showToast('Las notificaciones están bloqueadas para este sitio. Actívalas en los ajustes del navegador y vuelve a cargar la página.');
+        return;
+      }
+      let permission;
+      try{permission=await Notification.requestPermission();}
+      catch(_){showToast('No se pudo solicitar permiso de notificaciones en este navegador.');return;}
       if (permission === 'granted') {
-        const btn = document.getElementById('notify-enable');
-        btn.innerHTML = '<i class="fa-solid fa-bell text-emerald-500"></i> <span class="hidden md:inline">Activos</span>';
-        btn.className = 'px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5';
+        syncNotificationButton();
         showToast('Avisos activados en este navegador.');
       } else {
         showToast('Permiso de notificaciones no concedido.');
@@ -986,15 +1024,6 @@
       const label = p.fase === 'OT' ? 'OT #' + p.codigoOT : 'Estudio #' + p.codigoEstudio;
       const message = `${label} · ${p.cliente}: ${stage} completado`;
       showToast(message);
-      if (document.visibilityState !== 'visible' && 'Notification' in window && Notification.permission === 'granted') {
-        try {
-          new Notification('ADAEQUO PLV · Etapa completada', {
-            body: message,
-            icon: p.imagen || undefined,
-            tag: p.id + '-' + stage
-          });
-        } catch (e) {}
-      }
     }
 
     function checkStageTransition(p, prop, oldValue, newValue) {
@@ -3409,8 +3438,11 @@
     async function refreshState({notifyIncoming=false}={}){const previousIds=new Set(notifications.map(n=>n.id));const result=await api('load');projects=normalizeProjectsList(result.projects||[]);clientesDB=normalizeClientsList(result.clients||[]);comerciales=result.comerciales||[];appUsers=result.users||appUsers;notifications=result.notifications||notifications;updateBadges();updateNotificationCenter();if(notifyIncoming)notifyNewNotifications(previousIds);}
     function notifyNewNotifications(previousIds){
       notifications.filter(n=>n&&!n.read&&!previousIds.has(n.id)).forEach(n=>{
-        if(document.visibilityState==='visible')showToast(n.message||n.title||'Nueva notificación');
-        else if('Notification' in window&&Notification.permission==='granted'){try{new Notification(n.title||'ADAEQUO PLV',{body:n.message||'Nueva actualización',tag:String(n.id)});}catch(_){}}
+        let sentToSystem=false;
+        if('Notification' in window&&Notification.permission==='granted'){
+          try{new Notification(n.title||'ADAEQUO PLV',{body:n.message||'Nueva actualización',tag:String(n.id)});sentToSystem=true;}catch(_){}
+        }
+        if(!sentToSystem&&document.visibilityState==='visible')showToast(n.message||n.title||'Nueva notificación');
       });
     }
     let notificationPollRunning=false;
@@ -3516,6 +3548,7 @@
 
     // Inicializar la aplicación en el Dashboard
     switchView('dashboard');
+    syncNotificationButton();
     // No se restaura ninguna sesión desde almacenamiento local: al recargar, se vuelve a autenticar.
     setInterval(async()=>{if(!authToken||savingState)return;try{await refreshState({notifyIncoming:true});renderCurrentView();}catch(err){if(/sesión|desactivado/i.test(err.message||''))logoutLocal();}},60000);
     setInterval(pollNotifications,20000);
