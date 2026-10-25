@@ -2,10 +2,38 @@
 <html lang="es" class="light">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>ADAEQUO PLV v4.1 · Intranet Operativa de Estudios, OTs y Kanbans</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
+    // URL de implementación de Apps Script. Sustituir al desplegar; no incluir secretos aquí.
+    const API_URL = 'PEGA_AQUI_URL_WEB_APP_APPS_SCRIPT';
+    const apiFrames = new Map();
+    function api(action, payload = {}) {
+      if (!API_URL.startsWith('https://script.google.com/')) return Promise.reject(new Error('Configura la URL del Web App de Apps Script en API_URL.'));
+      const tracksSaving=!['login','logout','load','notifications'].includes(action);
+      if(tracksSaving)beginSaving();
+      const nonce = window.crypto?.randomUUID ? window.crypto.randomUUID().replace(/-/g,'') : (Date.now() + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2));
+      const requestId = 'r' + nonce;
+      return new Promise((resolve, reject) => {
+        const frame = document.createElement('iframe'); frame.name = 'plv_api_' + requestId; frame.style.display = 'none'; frame.setAttribute('aria-hidden','true');
+        let done = false;
+        const cleanup = () => { if (done) return; done = true; window.removeEventListener('message', onMessage); clearTimeout(timer); apiFrames.delete(requestId); frame.remove(); if(tracksSaving)endSaving(); };
+        // HtmlService anida la respuesta en un iframe de Google, por lo que event.source
+        // no es necesariamente el iframe exterior que recibe el formulario.
+        const onMessage = event => {
+          const googleOrigin = event.origin === 'null' || event.origin === 'https://script.google.com' || /^https:\/\/([a-z0-9-]+\.)*googleusercontent\.com$/i.test(event.origin);
+          if (!googleOrigin || event.data?.requestId !== requestId) return;
+          cleanup(); if (event.data.ok) resolve(event.data.result); else reject(new Error(event.data.error || 'Error del servidor'));
+        };
+        const timer = setTimeout(() => { cleanup(); reject(new Error('Apps Script no respondió. Comprueba que la URL termine en /exec, que la implementación esté activa y que permita el acceso necesario.')); }, 60000);
+        apiFrames.set(requestId, frame); window.addEventListener('message', onMessage); document.body.appendChild(frame);
+        const form = document.createElement('form'); form.method = 'POST'; form.action = API_URL; form.target = frame.name; form.style.display = 'none';
+        const fields = { action, requestId, token: authToken || '', payload: JSON.stringify(payload) };
+        for (const [name,value] of Object.entries(fields)) { const input=document.createElement('input'); input.type='hidden'; input.name=name; input.value=value; form.appendChild(input); }
+        document.body.appendChild(form); form.submit(); form.remove();
+      });
+    }
     tailwind.config = {
       darkMode: 'class',
       theme: {
@@ -25,6 +53,47 @@
     
     body {
       font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+    }
+    .app-shell {
+      height: 100vh;
+      height: 100dvh;
+      min-height: 0;
+    }
+    #app-sidebar {
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    main {
+      min-height: 0;
+    }
+    #workspace {
+      min-height: 0;
+      overscroll-behavior-y: contain;
+    }
+    @media (max-width: 1023px) {
+      .app-shell {
+        padding-top: env(safe-area-inset-top, 0px);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+      }
+    }
+    @media (max-width: 639px) {
+      #notification-center-panel {
+        position: fixed;
+        left: 0.75rem;
+        left: max(0.75rem, env(safe-area-inset-left, 0px));
+        right: 0.75rem;
+        right: max(0.75rem, env(safe-area-inset-right, 0px));
+        top: 6rem;
+        top: max(6rem, calc(env(safe-area-inset-top, 0px) + 5.5rem));
+        width: auto;
+        max-height: calc(100vh - 7rem);
+        max-height: calc(100dvh - max(6rem, calc(env(safe-area-inset-top, 0px) + 6rem)));
+      }
     }
     .font-mono-code {
       font-family: 'JetBrains Mono', monospace;
@@ -69,29 +138,9 @@
     .custom-scroll::-webkit-scrollbar-thumb:hover {
       background: #94a3b8;
     }
-
-    html, body { max-width:100%; overflow-x:hidden; }
-    button, input, select, textarea { touch-action: manipulation; }
-    @media (max-width: 640px) {
-      #notification-center-panel {
-        position: fixed !important;
-        top: calc(env(safe-area-inset-top, 0px) + 58px) !important;
-        left: max(8px, env(safe-area-inset-left, 8px)) !important;
-        right: max(8px, env(safe-area-inset-right, 8px)) !important;
-        width: auto !important;
-        max-width: none !important;
-        max-height: calc(100dvh - 82px - env(safe-area-inset-bottom, 0px)) !important;
-        z-index: 200 !important;
-        border-radius: 16px !important;
-      }
-      #notification-center-list { max-height: calc(100dvh - 190px - env(safe-area-inset-bottom, 0px)) !important; }
-      #toast-container { left: max(8px, env(safe-area-inset-left, 8px)); right: max(8px, env(safe-area-inset-right, 8px)); bottom: calc(8px + env(safe-area-inset-bottom, 0px)); max-width:none; }
-      #toast-container > * { max-width:100%; overflow-wrap:anywhere; }
-    }
-
   </style>
 </head>
-<body class="bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100 h-screen flex overflow-hidden antialiased selection:bg-indigo-600 selection:text-white transition-colors duration-200">
+<body class="app-shell bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex overflow-hidden antialiased selection:bg-indigo-600 selection:text-white transition-colors duration-200">
 
   <!-- ==================== OVERLAY MÓVIL PARA SIDEBAR ==================== -->
   <div id="sidebar-backdrop" onclick="closeMobileSidebar()" class="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-30 hidden lg:hidden transition-opacity"></div>
@@ -188,11 +237,11 @@
               </span>
               <span id="badge-k-impresion" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 shrink-0">0</span>
             </button>
-            <button onclick="switchView('acabados')" id="nav-acabados" class="nav-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium text-left transition-all cursor-pointer">
-              <span class="flex items-center gap-3 truncate"><i class="fa-solid fa-scissors w-5 text-center text-orange-400 shrink-0"></i><span class="truncate">Acabados</span></span>
+            <button onclick="switchView('kanban-acabados')" id="nav-kanban-acabados" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium text-left transition-all cursor-pointer">
+              <i class="fa-solid fa-scissors w-5 text-center text-orange-400"></i><span>Acabados</span>
             </button>
-            <button onclick="switchView('pedidos')" id="nav-pedidos" class="nav-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium text-left transition-all cursor-pointer">
-              <span class="flex items-center gap-3 truncate"><i class="fa-solid fa-box w-5 text-center text-teal-400 shrink-0"></i><span class="truncate">Pedidos</span></span>
+            <button onclick="switchView('pedidos')" id="nav-pedidos" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium text-left transition-all cursor-pointer">
+              <i class="fa-solid fa-box w-5 text-center text-emerald-400"></i><span>Pedidos</span>
             </button>
           </nav>
         </div>
@@ -217,10 +266,10 @@
     <!-- Pie del Sidebar -->
     <div class="p-3.5 border-t border-slate-800 bg-slate-950/60 text-[11px] text-slate-400 flex items-center justify-between shrink-0">
       <span class="flex items-center gap-1.5 font-medium">
-        <i class="fa-solid fa-database text-indigo-400"></i> Sincronizado Local
+        <i class="fa-solid fa-database text-indigo-400"></i> Google Sheets
       </span>
       <button onclick="resetDemo()" class="text-amber-400 hover:text-amber-300 font-semibold hover:underline cursor-pointer">
-        Restaurar Demo
+        Borrar Demo
       </button>
     </div>
   </aside>
@@ -233,7 +282,7 @@
       <div class="flex flex-col xl:flex-row xl:items-center gap-3">
         <div class="flex items-center gap-3 min-w-0 xl:w-64 xl:shrink-0">
           <button onclick="openMobileSidebar()" class="lg:hidden w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center shrink-0 cursor-pointer transition" title="Abrir menú"><i class="fa-solid fa-bars text-sm"></i></button>
-          <div class="min-w-0"><div class="flex items-center gap-2 flex-wrap"><h2 id="view-title" class="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white tracking-tight truncate">Urgencias, Entregas y Calendario</h2><span id="view-count-pill" class="hidden" aria-hidden="true"></span></div><p id="view-subtitle" class="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate hidden sm:block">Prioridades de planta, próximas salidas y calendario mensual de entregas</p></div>
+          <div class="min-w-0"><div class="flex items-center gap-2 flex-wrap"><h2 id="view-title" class="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white tracking-tight truncate">Urgencias, Entregas y Calendario</h2></div><p id="view-subtitle" class="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate hidden sm:block">Prioridades de planta, próximas salidas y calendario mensual de entregas</p></div>
         </div>
         <div class="relative w-full xl:flex-1 xl:max-w-xl xl:mx-auto order-2 xl:order-none">
           <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i><input type="text" id="global-search" oninput="handleSearchInput()" placeholder="Buscar estudio, OT, cliente..." class="w-full pl-8 pr-7 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-200/90 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white dark:focus:bg-slate-900 transition-all"><button id="clear-search-btn" onclick="clearGlobalSearch()" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs cursor-pointer"><i class="fa-solid fa-circle-xmark"></i></button>
@@ -244,15 +293,16 @@
           </div>
           <label class="flex items-center gap-2 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/70 dark:hover:bg-slate-700 border border-slate-200/80 dark:border-slate-700 px-3 py-2 rounded-xl cursor-pointer select-none transition"><input type="checkbox" id="show-finished" onchange="renderCurrentView()" checked class="sr-only peer"><div class="w-8 h-4 bg-slate-300 dark:bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all relative peer-checked:bg-emerald-500"></div><span class="font-semibold text-slate-700 dark:text-slate-200">Finalizados</span></label>
           <button id="theme-toggle-btn" onclick="toggleTheme()" class="px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-2 transition cursor-pointer" title="Cambiar entre Modo Claro y Modo Oscuro"><i id="theme-toggle-icon" class="fa-solid fa-moon text-indigo-600 dark:text-amber-400"></i><span id="theme-toggle-text" class="hidden md:inline">Modo Oscuro</span></button>
+          <button id="refresh-data-btn" onclick="refreshFromSheets()" class="px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-2 transition cursor-pointer" title="Volver a cargar los datos de Google Sheets"><i id="refresh-data-icon" class="fa-solid fa-rotate"></i><span class="hidden md:inline">Actualizar</span></button>
           <div class="relative shrink-0">
             <button id="notification-center-trigger" onclick="toggleNotificationCenter()" class="relative px-3 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer flex items-center gap-1.5" title="Ver todas las notificaciones" aria-label="Centro de notificaciones"><i class="fa-solid fa-bell"></i><span class="hidden md:inline">Notificaciones</span><span id="notification-unread-badge" class="hidden absolute -top-1.5 -right-1.5 min-w-5 h-5 px-1 rounded-full bg-rose-600 text-white text-[10px] font-extrabold items-center justify-center border-2 border-white dark:border-slate-900">0</span></button>
             <div id="notification-center-panel" class="hidden absolute right-0 top-full mt-2 w-[min(92vw,420px)] rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl z-50 overflow-hidden">
               <div class="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3"><div><h3 class="text-sm font-extrabold text-slate-900 dark:text-white">Centro de notificaciones</h3><p id="notification-center-subtitle" class="text-[11px] text-slate-500 dark:text-slate-400">Historial de avisos recibidos</p></div><button onclick="markAllNotificationsRead()" class="text-[10px] font-bold text-indigo-600 dark:text-indigo-300 hover:underline whitespace-nowrap">Marcar todo leído</button></div>
               <div id="notification-center-list" class="max-h-[min(65vh,480px)] overflow-y-auto custom-scroll"><div class="p-8 text-center text-xs text-slate-500">Todavía no has recibido notificaciones.</div></div>
-              <div class="px-4 py-2.5 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center"><span class="text-[10px] text-slate-400">Avisos de esta sesión</span><button onclick="clearAllNotifications()" class="text-[10px] font-bold text-rose-600 dark:text-rose-300 hover:underline">Borrar historial</button></div>
+              <div class="px-4 py-2.5 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center"><span class="text-[10px] text-slate-400">Se guardan en Google Sheets</span><button onclick="clearAllNotifications()" class="text-[10px] font-bold text-rose-600 dark:text-rose-300 hover:underline">Borrar historial</button></div>
             </div>
           </div>
-          <button onclick="openNewProjectModal('ESTUDIO')" class="sm:hidden px-2.5 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white shadow-xs cursor-pointer"><i class="fa-solid fa-plus"></i> Nuevo</button>
+            <button onclick="openNewProjectModal('ESTUDIO')" class="sm:hidden px-2.5 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white shadow-xs cursor-pointer"><i class="fa-solid fa-plus"></i> Nuevo</button>
           <div class="relative ml-1 shrink-0">
             <button id="profile-menu-trigger" onclick="toggleProfileMenu()" class="flex items-center gap-2 rounded-xl p-1.5 pr-2 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition cursor-pointer" title="Mi perfil" aria-label="Abrir menú de perfil">
               <img id="header-profile-image" src="" alt="Foto de perfil" class="w-9 h-9 rounded-full object-cover border-2 border-indigo-200 dark:border-indigo-700 bg-slate-200 dark:bg-slate-700">
@@ -606,7 +656,7 @@
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
           <div class="sm:col-span-2">
             <label class="block font-bold uppercase text-[10px] text-slate-500 dark:text-slate-400 mb-1">Nombre Comercial / Marca *</label>
-            <input type="text" id="cm-nombre" required placeholder="Ej: Puig (Carolina Herrera)" class="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <input type="text" id="cm-nombre" required placeholder="Ej: Cliente Demo Norte" class="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
           </div>
           <div>
             <label class="block font-bold uppercase text-[10px] text-slate-500 dark:text-slate-400 mb-1">Sector Industrial *</label>
@@ -679,7 +729,7 @@
     </div>
   </div>
 
-  <!-- Acceso por usuario (prototipo local; ver nota de seguridad en la gestión de usuarios) -->
+  <!-- Acceso mediante backend Google Apps Script -->
   <div id="login-screen" class="fixed inset-0 z-[100] bg-slate-950 flex items-center justify-center p-4">
     <form onsubmit="loginLocal(event)" class="w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl p-7 shadow-2xl space-y-4 border border-slate-200 dark:border-slate-800">
       <div class="w-12 h-12 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-xl mx-auto"><i class="fa-solid fa-layer-group"></i></div>
@@ -687,13 +737,22 @@
       <div><label class="block text-xs font-bold mb-1 text-slate-600 dark:text-slate-300">Usuario</label><input id="login-user" required autocomplete="username" class="w-full border rounded-xl p-3 bg-white dark:bg-slate-800 dark:border-slate-700 text-sm" placeholder="Tu usuario"></div>
       <div><label class="block text-xs font-bold mb-1 text-slate-600 dark:text-slate-300">Contraseña</label><input id="login-pass" type="password" required autocomplete="current-password" class="w-full border rounded-xl p-3 bg-white dark:bg-slate-800 dark:border-slate-700 text-sm" placeholder="Tu contraseña"></div>
       <p id="login-error" class="hidden text-xs text-rose-600 font-semibold">Usuario o contraseña incorrectos.</p>
-      <button class="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl p-3 font-bold text-sm">Entrar</button>
-      <p class="text-[10px] text-slate-400 text-center">Primer acceso demo: <b>admin</b> / <b>admin123</b></p>
+      <div id="login-loading" class="hidden text-center text-xs font-semibold text-indigo-600 dark:text-indigo-300"><i class="fa-solid fa-circle-notch fa-spin mr-2"></i>Consultando usuario y datos en Google Sheets…</div>
+      <button id="login-submit" class="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-wait text-white rounded-xl p-3 font-bold text-sm"><span id="login-submit-label">Entrar</span></button>
+      <p class="text-[10px] text-slate-400 text-center">Tras inicializar Apps Script: <b>admin</b> / <b>Demo2026!!</b></p>
     </form>
   </div>
 
   <!-- Contenedor de Notificaciones Toast -->
   <div id="toast-container" class="fixed bottom-4 right-4 z-50 space-y-2 pointer-events-none max-w-[90vw]"></div>
+
+  <!-- Indicador de guardado en Google Sheets -->
+  <div id="saving-overlay" class="fixed inset-0 z-[90] hidden items-center justify-center bg-slate-950/35 backdrop-blur-[2px] p-4" role="status" aria-live="polite" aria-atomic="true">
+    <div class="flex min-w-52 items-center gap-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-6 py-5 shadow-2xl">
+      <i class="fa-solid fa-circle-notch animate-spin text-xl text-indigo-600 dark:text-indigo-400" aria-hidden="true"></i>
+      <span class="text-sm font-bold text-slate-800 dark:text-slate-100">Guardando cambios…</span>
+    </div>
+  </div>
 
   <!-- ==================== LÓGICA JAVASCRIPT ==================== -->
   <script>
@@ -760,14 +819,13 @@
     let showNewComercialInput = false;
 
     // Calendario posicionado en Octubre 2026 por defecto
-    let calMonth = 9; // 0 = Enero, 9 = Octubre
-    let calYear = 2026;
+    let calMonth = new Date().getMonth();
+    let calYear = new Date().getFullYear();
 
     // ==================== GESTIÓN DE TEMA OSCURO / CLARO ====================
     function initTheme() {
-      const savedTheme = null;
       const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-      const isDark = savedTheme ? savedTheme === 'dark' : prefersDark;
+      const isDark = prefersDark;
       applyTheme(isDark);
     }
 
@@ -790,7 +848,6 @@
 
     function toggleTheme() {
       const isDarkNow = !document.documentElement.classList.contains('dark');
-      
       applyTheme(isDarkNow);
       showToast(isDarkNow ? 'Modo Oscuro activado 🌙' : 'Modo Claro activado ☀️');
     }
@@ -811,237 +868,14 @@
     }
 
     // Cartera de comerciales y clientes
-    let comerciales = ['Laura M.', 'Marc R.', 'Jordi P.', 'Anna V.'];
-
-    const DEFAULT_CLIENTES_CRM = [
-      {
-        id: 'C1',
-        nombre: 'Puig (Carolina Herrera)',
-        comercialAsignado: 'Laura M.',
-        sector: 'Perfumería',
-        imagen: '',
-        contacto: 'Elena Gómez · Trade Marketing',
-        email: 'elena.gomez@puig.es',
-        telefono: '+34 934 007 000',
-        ubicacion: 'Barcelona · España',
-        notas: 'Requiere prueba de color certificada en Offset y protección individual en piezas de metacrilato.'
-      },
-      {
-        id: 'C2',
-        nombre: "L'Oréal Luxe",
-        comercialAsignado: 'Marc R.',
-        sector: 'Cosmética',
-        imagen: '',
-        contacto: 'Carlos Valls · Retail Purchasing',
-        email: 'carlos.valls@loreal.com',
-        telefono: '+34 911 774 400',
-        ubicacion: 'Madrid · España',
-        notas: 'Entregas en plataforma logística con cita previa 48h. Prioridad en acabados glorificadores y podios.'
-      },
-      {
-        id: 'C3',
-        nombre: 'Laboratorios Nuxe',
-        comercialAsignado: 'Laura M.',
-        sector: 'Farmacia / Dermo',
-        imagen: '',
-        contacto: 'Sophie Laurent · Merchandising',
-        email: 's.laurent@nuxe.com',
-        telefono: '+34 932 419 100',
-        ubicacion: 'Barcelona · España',
-        notas: 'Expositores de mostrador para canal farmacia. Cartón certificado FSC obligatorio.'
-      },
-      {
-        id: 'C4',
-        nombre: 'Coty',
-        comercialAsignado: 'Marc R.',
-        sector: 'Perfumería',
-        imagen: '',
-        contacto: 'David Roca · Display Manager',
-        email: 'david.roca@cotyinc.com',
-        telefono: '+34 933 662 100',
-        ubicacion: 'Barcelona · España',
-        notas: 'Campañas de alto volumen de showcards y stoppers. Empaquetado en kits por punto de venta.'
-      },
-      {
-        id: 'C5',
-        nombre: 'Stada',
-        comercialAsignado: 'Jordi P.',
-        sector: 'Farmacia',
-        imagen: '',
-        contacto: 'Núria Soler · Trade Farma',
-        email: 'nuria.soler@stada.es',
-        telefono: '+34 934 738 800',
-        ubicacion: 'Sant Just Desvern · BCN',
-        notas: 'Displays de suelo y dispensadores de mostrador. Plazos de entrega muy ajustados.'
-      },
-      {
-        id: 'C6',
-        nombre: 'Sephora',
-        comercialAsignado: 'Anna V.',
-        sector: 'Retail Beauty',
-        imagen: '',
-        contacto: 'Clara Montes · Visual Merchandising',
-        email: 'clara.montes@sephora.es',
-        telefono: '+34 915 908 500',
-        ubicacion: 'Madrid · España',
-        notas: 'PLV permanente y mixto de alta gama (PMMA negro brillo, iluminación LED y vinilo corte).'
-      }
-    ];
+    let comerciales = [];
 
     function normalizeClientsList(list) {
-      return list.map((c, idx) => {
-        const fallback = DEFAULT_CLIENTES_CRM.find(d => d.nombre === c.nombre) || DEFAULT_CLIENTES_CRM[idx % DEFAULT_CLIENTES_CRM.length] || {};
-        return {
-          id: c.id || ('C' + (idx + 1)),
-          nombre: c.nombre || 'Cliente PLV',
-          comercialAsignado: c.comercialAsignado || comerciales[0] || 'Laura M.',
-          sector: c.sector || fallback.sector || 'Retail Beauty',
-          imagen: c.imagen || '',
-          contacto: c.contacto !== undefined ? c.contacto : (fallback.contacto || 'Responsable Trade Marketing'),
-          email: c.email !== undefined ? c.email : (fallback.email || 'compras@cliente.com'),
-          telefono: c.telefono !== undefined ? c.telefono : (fallback.telefono || '+34 930 000 000'),
-          ubicacion: c.ubicacion !== undefined ? c.ubicacion : (fallback.ubicacion || 'Barcelona · España'),
-          notas: c.notas !== undefined ? c.notas : (fallback.notas || 'Estándar de calidad PLV Adaequo.')
-        };
-      });
+      const str=v=>v===undefined||v===null?'':String(v);
+      return (list || []).map((c, idx) => ({ id: str(c.id)||('C'+(idx+1)), nombre: str(c.nombre)||'Cliente', comercialAsignado: str(c.comercialAsignado), sector: str(c.sector), imagen: str(c.imagen), contacto: str(c.contacto), email: str(c.email), telefono: str(c.telefono), ubicacion: str(c.ubicacion), notas: str(c.notas) }));
     }
 
-    let clientesDB = normalizeClientsList(DEFAULT_CLIENTES_CRM);
-
-    function getDefaultProjects() {
-      return [
-        {
-          id: "P1",
-          fase: "ESTUDIO",
-          codigoEstudio: "260104",
-          codigoOT: "-",
-          cliente: "Laboratorios Nuxe",
-          comercial: "Laura M.",
-          titulo: "Expositor Sobremesa Huile Prodigieuse + Peana PMMA",
-          imagen: PRESET_IMAGES[3],
-          tipo: "MIXTO_CARTON",
-          deptoLider: "Cartón",
-          deptoApoyo: "Permanente",
-          estadoLider: "Hecho",
-          archivoLider: "//SRV-PLV/2026/E260104/Plano_Todo_Carton_v2.ai",
-          requiereApoyo: true,
-          detalleApoyo: "Montaje corte/impresión pieza pequeña PMMA 3mm",
-          estadoApoyo: "Preparando",
-          archivoApoyo: "",
-          origenGrafica: "Gráfica solo para prototipo (Cliente)",
-          estadoGrafica: "Preparando",
-          maquinas: { "SwissQprint": "Pendiente" },
-          fechaEntrega: "2026-10-26",
-          urgente: false,
-          finalizado: false,
-          creado: "16/10 15:00"
-        },
-        {
-          id: "P2",
-          fase: "ESTUDIO",
-          codigoEstudio: "260108",
-          codigoOT: "-",
-          cliente: "Sephora",
-          comercial: "Anna V.",
-          titulo: "Glorificador Metacrilato Campaña Navidad + Folletero Cartón",
-          imagen: PRESET_IMAGES[1],
-          tipo: "MIXTO_PERM",
-          deptoLider: "Permanente",
-          deptoApoyo: "Cartón",
-          estadoLider: "Preparando",
-          archivoLider: "",
-          requiereApoyo: true,
-          detalleApoyo: "Montaje corte de folletero lateral en microcanal",
-          estadoApoyo: "Pendiente",
-          archivoApoyo: "",
-          origenGrafica: "Sin gráfica (Maqueta blanca)",
-          estadoGrafica: "Pendiente",
-          maquinas: {},
-          fechaEntrega: "",
-          urgente: true,
-          finalizado: false,
-          creado: "17/10 11:30"
-        },
-        {
-          id: "P3",
-          fase: "OT",
-          codigoEstudio: "260089",
-          codigoOT: "26391",
-          cliente: "Puig (Carolina Herrera)",
-          comercial: "Laura M.",
-          titulo: "Floorstand 4 Baldas Cartón + Glorifier Superior PMMA",
-          imagen: PRESET_IMAGES[2],
-          tipo: "MIXTO_CARTON",
-          deptoLider: "Cartón",
-          deptoApoyo: "Permanente",
-          estadoLider: "Hecho",
-          archivoLider: "//SRV-PLV/2026/OT26391/Plano_Floorstand_Todo.ai",
-          requiereApoyo: true,
-          detalleApoyo: "Montaje de corte PMMA 5mm para SwissQprint",
-          estadoApoyo: "Pendiente",
-          archivoApoyo: "",
-          origenGrafica: "Gráfica definitiva enviada por cliente",
-          estadoGrafica: "Preparando",
-          maquinas: { "Offset": "Enviado", "SwissQprint": "Pendiente" },
-          fechaEntrega: "2026-10-23",
-          urgente: true,
-          finalizado: false,
-          creado: "14/10 09:15"
-        },
-        {
-          id: "P4",
-          fase: "OT",
-          codigoEstudio: "260092",
-          codigoOT: "26395",
-          cliente: "L'Oréal Luxe",
-          comercial: "Marc R.",
-          titulo: "Podio Tester Plástico/Madera + Cartela Trasera Cartón",
-          imagen: PRESET_IMAGES[0],
-          tipo: "MIXTO_PERM",
-          deptoLider: "Permanente",
-          deptoApoyo: "Cartón",
-          estadoLider: "Hecho",
-          archivoLider: "//SRV-PLV/2026/OT26395/Plano_Podio_Todo.dxf",
-          requiereApoyo: true,
-          detalleApoyo: "Montaje troquel cartela trasera doble cara",
-          estadoApoyo: "Hecho",
-          archivoApoyo: "//SRV-PLV/2026/OT26395/Montaje_Cartela_Corte.pdf",
-          origenGrafica: "Reutilizar gráfica de maqueta (Revisar)",
-          estadoGrafica: "Enviado",
-          maquinas: { "SwissQprint": "Preparando", "HP Latex": "Pendiente", "Vinilo Corte": "Hecho" },
-          fechaEntrega: "2026-10-21",
-          urgente: true,
-          finalizado: false,
-          creado: "12/10 10:00"
-        },
-        {
-          id: "P5",
-          fase: "OT",
-          codigoEstudio: "260085",
-          codigoOT: "26388",
-          cliente: "Coty",
-          comercial: "Marc R.",
-          titulo: "Pack 150 Showcards Escaparate + Stoppers Lineal",
-          imagen: PRESET_IMAGES[3],
-          tipo: "CARTON",
-          deptoLider: "Cartón",
-          deptoApoyo: "-",
-          estadoLider: "Hecho",
-          archivoLider: "//SRV-PLV/2026/OT26388/Troquel_Showcards.pdf",
-          requiereApoyo: false,
-          detalleApoyo: "",
-          estadoApoyo: "Hecho",
-          archivoApoyo: "",
-          origenGrafica: "Gráfica definitiva enviada por cliente",
-          estadoGrafica: "Hecho",
-          maquinas: { "HP Latex": "Hecho", "Serigrafía": "Hecho" },
-          fechaEntrega: "2026-10-20",
-          urgente: false,
-          finalizado: true,
-          creado: "10/10 08:30"
-        }
-      ];
-    }
+    let clientesDB = [];
 
     function normalizeDeptName(name) {
       if (!name) return '-';
@@ -1050,152 +884,63 @@
         .replace(/^OT\s+Permanente$/i, 'Permanente');
     }
 
-    function normalizeISODate(value) {
-      if (!value) return '';
-      if (value instanceof Date && !isNaN(value.getTime())) {
-        return value.getFullYear() + '-' + String(value.getMonth()+1).padStart(2,'0') + '-' + String(value.getDate()).padStart(2,'0');
-      }
-      const s = String(value).trim();
-      let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:T.*)?$/);
-      if (m) return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
-      m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
-      if (m) return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
-      const d = new Date(s);
-      if (!isNaN(d.getTime())) return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    function normalizeDateOnly(value){
+      if(!value)return '';
+      const text=String(value).trim();
+      const iso=text.match(/^(\d{4}-\d{2}-\d{2})/);if(iso)return iso[1];
+      const local=text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if(local)return `${local[3]}-${String(local[2]).padStart(2,'0')}-${String(local[1]).padStart(2,'0')}`;
+      const parsed=new Date(text);if(!Number.isNaN(parsed.getTime()))return `${parsed.getFullYear()}-${String(parsed.getMonth()+1).padStart(2,'0')}-${String(parsed.getDate()).padStart(2,'0')}`;
       return '';
     }
+
     function normalizeProjectsList(list) {
-      return (Array.isArray(list) ? list : []).map(p => ({
+      const str=v=>v===undefined||v===null?'':String(v);
+      const bool=v=>v===true||['true','1','yes','sí','si'].includes(String(v).trim().toLowerCase());
+      return (list||[]).map(p => ({
         ...p,
-        fechaEntrega: normalizeISODate(p.fechaEntrega),
+        id:str(p.id), codigoEstudio:str(p.codigoEstudio), codigoOT:str(p.codigoOT), cliente:str(p.cliente), comercial:str(p.comercial), titulo:str(p.titulo), fechaEntrega:normalizeDateOnly(p.fechaEntrega),
+        maquinas:p.maquinas&&typeof p.maquinas==='object'&&!Array.isArray(p.maquinas)?p.maquinas:{},
+        estadoCorte:str(p.estadoCorte)||'Pendiente',estadoPlastificado:str(p.estadoPlastificado)||'Pendiente',estadoEmpaquetado:str(p.estadoEmpaquetado)||'Pendiente',
         deptoLider: normalizeDeptName(p.deptoLider),
         deptoApoyo: normalizeDeptName(p.deptoApoyo),
-        urgente: Boolean(p.urgente),
-        acabados: { corte:'Pendiente', plastificado:'Pendiente', empaquetado:'Pendiente', ...(p.acabados || {}) },
-        pedidos: Array.isArray(p.pedidos) ? p.pedidos : []
+        requiereApoyo:bool(p.requiereApoyo),urgente:bool(p.urgente),finalizado:bool(p.finalizado)
       }));
     }
 
-    // Google Sheets: la app mantiene una copia local para que la interfaz siga respondiendo;
-    // la fuente compartida pasa a ser Sheets cuando la app se publica en Apps Script.
-    let cloudReady = false;
-    let cloudSaveTimer = null;
-    let cloudWriteInProgress = false;
-    let cloudLastSnapshot = '';
-    let cloudStarted = false;
+    let projects = [];
 
-    let projects = normalizeProjectsList(getDefaultProjects());
-
-    function isAppsScriptWebApp() {
-      return !!(window.google && google.script && google.script.run);
+    let savingState = false;
+    let saveRequestsInFlight = 0;
+    function beginSaving(){
+      saveRequestsInFlight++;
+      savingState=true;
+      const overlay=document.getElementById('saving-overlay');
+      if(overlay){overlay.classList.remove('hidden');overlay.classList.add('flex');}
     }
-
-    function showCloudStatus(message, ok = true) {
-      if (ok) { hideCloudStatus(); return; }
-      let el = document.getElementById('plv-cloud-status');
-      if (!el) {
-        el = document.createElement('div');
-        el.id = 'plv-cloud-status';
-        el.className = 'fixed bottom-4 right-4 z-[120] flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold shadow-lg';
-        document.body.appendChild(el);
-      }
-      el.className = 'fixed bottom-4 right-4 z-[120] flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold shadow-lg ' +
-        (ok ? 'bg-white text-slate-700 border-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:border-slate-700' : 'bg-amber-50 text-amber-800 border-amber-300');
-      el.innerHTML = `<i class="fa-solid ${ok ? 'fa-cloud-arrow-up' : 'fa-triangle-exclamation'}"></i><span>${escapeHtml(message)}</span><button type="button" onclick="syncFromSheets(true)" class="ml-1 underline">Sincronizar</button>`;
+    function endSaving(){
+      saveRequestsInFlight=Math.max(0,saveRequestsInFlight-1);
+      savingState=saveRequestsInFlight>0;
+      const overlay=document.getElementById('saving-overlay');
+      if(overlay){overlay.classList.toggle('hidden',!savingState);overlay.classList.toggle('flex',savingState);}
     }
-
-    function hideCloudStatus() {
-      const el = document.getElementById('plv-cloud-status');
-      if (el) el.remove();
-    }
-    function currentCloudPayload() {
-      return { projects, clients: clientesDB, comerciales };
-    }
-
-    function queueCloudSave() {
-      if (!cloudReady || !isAppsScriptWebApp() || cloudWriteInProgress) return;
-      if (cloudSaveTimer) clearTimeout(cloudSaveTimer);
-      cloudSaveTimer = setTimeout(() => {
-        const payload = currentCloudPayload();
-        const snapshot = JSON.stringify(payload);
-        if (snapshot === cloudLastSnapshot) return;
-        cloudWriteInProgress = true;
-        google.script.run
-          .withSuccessHandler(() => { cloudLastSnapshot = snapshot; cloudWriteInProgress = false; hideCloudStatus(); })
-          .withFailureHandler(err => { cloudWriteInProgress = false; showCloudStatus('Error de sincronización: ' + (err && err.message ? err.message : 'revisa permisos'), false); })
-          .saveAppState(payload, getAuthToken());
-      }, 700);
-    }
-
-    function applyCloudState(state, initial = false) {
-      if (!state) return;
-      if (Array.isArray(state.projects)) projects = normalizeProjectsList(state.projects);
-      if (Array.isArray(state.clients)) clientesDB = normalizeClientsList(state.clients);
-      if (Array.isArray(state.comerciales)) comerciales = state.comerciales;
-      cloudLastSnapshot = JSON.stringify(currentCloudPayload());
-      cloudReady = true;
-      updateBadges();
-      if (!initial) { renderCurrentView(); }
-    }
-
-    function syncFromSheets(manual = false) {
-      if (!isAppsScriptWebApp()) { showCloudStatus('Abre la versión publicada en Apps Script', false); return; }
-      if (cloudWriteInProgress) return;
-      google.script.run
-        .withSuccessHandler(state => {
-          const hasRemoteData = state && ((state.projects && state.projects.length) || (state.clients && state.clients.length) || (state.comerciales && state.comerciales.length));
-          if (hasRemoteData) {
-            applyCloudState(state, false);
-          } else {
-            cloudReady = true;
-            queueCloudSave();
-            
-          }
-          if (manual && hasRemoteData) showToast('Datos sincronizados con Google Sheets');
-        })
-        .withFailureHandler(err => { cloudReady = false; showCloudStatus('No se pudo leer Google Sheets: ' + (err && err.message ? err.message : 'revisa configuración'), false); })
-        .getAppState(getAuthToken());
-    }
-
-    function initializeCloudSync() {
-      if (cloudStarted) return;
-      if (!isAppsScriptWebApp()) {  return; }
-      if (!getAuthToken()) return;
-      cloudStarted = true;
-      
-      google.script.run
-        .withSuccessHandler(state => {
-          const hasRemoteData = state && ((state.projects && state.projects.length) || (state.clients && state.clients.length) || (state.comerciales && state.comerciales.length));
-          if (hasRemoteData) {
-            applyCloudState(state, true);
-            renderCurrentView();
-            hideCloudStatus();
-          } else {
-            cloudReady = true;
-            cloudLastSnapshot = '';
-            queueCloudSave();
-            
-          }
-        })
-        .withFailureHandler(err => { cloudReady = false; showCloudStatus('Error de conexión: ' + (err && err.message ? err.message : 'revisa permisos'), false); })
-        .getAppState(getAuthToken());
-      // Lee cambios hechos directamente en la hoja cada minuto. No reemplaza datos mientras se edita un formulario o una OT.
-      setInterval(() => {
-        const active = document.activeElement;
-        const editing = active && /INPUT|TEXTAREA|SELECT/.test(active.tagName);
-        const drawer = document.getElementById('project-drawer');
-        const drawerOpen = drawer && !drawer.classList.contains('hidden');
-        if (cloudReady && !editing && !drawerOpen && !cloudWriteInProgress) syncFromSheets(false);
-      }, 5000);
-    }
-
-    function saveState() {
-      updateBadges();
-      queueCloudSave();
+    async function saveState() {
+      if (!authToken) return;
+      const previousNotificationIds=new Set(notifications.map(n=>n.id));
+      try {
+        const result = await api('saveState', { projects, clients: clientesDB, comerciales });
+        projects = normalizeProjectsList(result.projects || []);
+        clientesDB = normalizeClientsList(result.clients || []);
+        comerciales = result.comerciales || [];
+        if(Array.isArray(result.notifications))notifications=result.notifications;
+        updateBadges();
+        updateNotificationCenter();
+        notifyNewNotifications(previousNotificationIds);
+      } catch (err) { showToast('No se pudo guardar en Google Sheets: ' + err.message); try { await refreshState(); } catch (_) { logoutLocal(); } }
+      finally { renderCurrentView(); }
     }
 
     initTheme();
-    saveState();
 
     // ==================== MINI-STEPPER VISUAL DE 3 ETAPAS ====================
     function renderMiniStepper(p) {
@@ -1256,29 +1001,42 @@
     }
 
     // ==================== NOTIFICACIONES Y EVENTOS GLOBALES ====================
+    function syncNotificationButton(){
+      const btn=document.getElementById('notify-enable');if(!btn)return;
+      if('Notification' in window&&Notification.permission==='granted'){
+        btn.innerHTML='<i class="fa-solid fa-bell text-emerald-500"></i> <span>Activos</span>';
+        btn.className='px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5';
+        btn.title='Notificaciones del sistema activadas en este navegador';
+      }else{
+        btn.innerHTML='<i class="fa-regular fa-bell"></i><span>Avisos sistema</span>';
+        btn.className='px-3 py-2 rounded-xl text-xs font-semibold bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/70 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/60 transition cursor-pointer flex items-center gap-1.5';
+        btn.title='Activar notificaciones de escritorio';
+      }
+    }
     async function enableNotifications() {
-      const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-      const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
       if (!('Notification' in window)) {
-        showToast(isIOS ? 'En iPhone, añade la web a la pantalla de inicio y ábrela desde el icono para activar notificaciones.' : 'Este navegador no admite notificaciones web.');
+        showToast('Este navegador no admite notificaciones de escritorio.');
         return;
       }
-      if (isIOS && !standalone) {
-        showToast('En iPhone, abre Safari → Compartir → Añadir a pantalla de inicio y después abre ADAEQUO desde el icono.');
+      if(Notification.permission==='denied'){
+        showToast('Las notificaciones están bloqueadas para este sitio. Actívalas en los ajustes del navegador y vuelve a cargar la página.');
         return;
       }
-      const permission = await Notification.requestPermission();
-      const btn = document.getElementById('notify-enable');
+      let permission;
+      try{permission=await Notification.requestPermission();}
+      catch(_){showToast('No se pudo solicitar permiso de notificaciones en este navegador.');return;}
       if (permission === 'granted') {
-        if(btn){btn.innerHTML='<i class="fa-solid fa-bell text-emerald-500"></i><span>Notificaciones activas</span>';btn.className='px-4 py-2.5 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 flex items-center gap-2';}
-        showToast('Permiso de notificaciones concedido en este dispositivo.');
-      } else showToast('Permiso de notificaciones no concedido. Revisa los ajustes del navegador.');
+        syncNotificationButton();
+        showToast('Avisos activados en este navegador.');
+      } else {
+        showToast('Permiso de notificaciones no concedido.');
+      }
     }
 
-    // Historial temporal en memoria; no se guarda información de negocio en el navegador.
-    let notificationItems = [];
-    function getMyNotifications(){ return notificationItems; }
-    function saveMyNotifications(items){ notificationItems = (items || []).slice(0,200); updateNotificationCenter(); }
+    // Las notificaciones se conservan en la hoja y solo se cargan en memoria durante la sesión.
+    let notifications = [];
+    function getMyNotifications(){return notifications;}
+    async function saveMyNotifications(items){if(!currentUser)return;try{notifications=await api('saveNotifications',{items:items.slice(0,200)});updateNotificationCenter();}catch(err){showToast('No se pudieron guardar las notificaciones');}}
     function updateNotificationCenter(){
       const badge=document.getElementById('notification-unread-badge');if(!badge)return;
       const items=getMyNotifications();const unread=items.filter(n=>!n.read).length;
@@ -1286,49 +1044,32 @@
       const subtitle=document.getElementById('notification-center-subtitle');if(subtitle)subtitle.textContent=`${items.length} avisos · ${unread} sin leer`;
       const list=document.getElementById('notification-center-list');if(!list)return;
       if(!items.length){list.innerHTML='<div class="p-8 text-center"><i class="fa-regular fa-bell-slash text-2xl text-slate-300 dark:text-slate-600"></i><p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Todavía no has recibido notificaciones.</p><p class="mt-1 text-[10px] text-slate-400">Cuando una fase pase a «Hecho», aparecerá aquí.</p></div>';return;}
-      list.innerHTML=items.map(n=>`<button onclick="readNotification('${String(n.id).replace(/[^a-zA-Z0-9_-]/g,'')}')" class="w-full text-left px-4 py-3 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/70 flex gap-3 ${n.read?'opacity-75':'bg-indigo-50/60 dark:bg-indigo-950/20'}"><span class="mt-0.5 w-8 h-8 shrink-0 rounded-xl flex items-center justify-center ${n.read?'bg-slate-100 dark:bg-slate-800 text-slate-500':'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300'}"><i class="fa-solid ${n.read?'fa-check':'fa-bell'} text-xs"></i></span><span class="min-w-0 flex-1"><span class="flex items-start justify-between gap-2"><span class="text-xs font-bold text-slate-800 dark:text-slate-100">${escapeHtml(n.title)}</span>${n.read?'':'<span class="w-2 h-2 rounded-full bg-indigo-500 mt-1 shrink-0"></span>'}</span><span class="block mt-1 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">${escapeHtml(n.message)}</span><span class="block mt-1.5 text-[10px] text-slate-400">${escapeHtml(n.timeLabel||'')}</span></span></button>`).join('');
+      list.innerHTML=items.map(n=>`<button onclick="readNotification('${String(n.id).replace(/[^a-zA-Z0-9_-]/g,'')}')" class="w-full text-left px-4 py-3 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/70 flex gap-3 ${n.read?'opacity-75':'bg-indigo-50/60 dark:bg-indigo-950/20'}"><span class="mt-0.5 w-8 h-8 shrink-0 rounded-xl flex items-center justify-center ${n.read?'bg-slate-100 dark:bg-slate-800 text-slate-500':'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300'}"><i class="fa-solid ${n.read?'fa-check':'fa-bell'} text-xs"></i></span><span class="min-w-0 flex-1"><span class="flex items-start justify-between gap-2"><span class="text-xs font-bold text-slate-800 dark:text-slate-100">${escapeHtml(n.title||n.message)}</span>${n.read?'':'<span class="w-2 h-2 rounded-full bg-indigo-500 mt-1 shrink-0"></span>'}</span>${n.title&&n.message?`<span class="block mt-1 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">${escapeHtml(n.message)}</span>`:''}<span class="block mt-1.5 text-[10px] text-slate-400">${escapeHtml(n.timeLabel||'')}</span></span></button>`).join('');
     }
     function toggleNotificationCenter(){const panel=document.getElementById('notification-center-panel');if(!panel)return;panel.classList.toggle('hidden');updateNotificationCenter();}
     document.addEventListener('click',function(e){const panel=document.getElementById('notification-center-panel');const trigger=document.getElementById('notification-center-trigger');if(panel&&!panel.classList.contains('hidden')&&!panel.contains(e.target)&&!trigger?.contains(e.target))panel.classList.add('hidden');});
     function readNotification(id){const items=getMyNotifications().map(n=>n.id===id?{...n,read:true}:n);saveMyNotifications(items);}
     function markAllNotificationsRead(){saveMyNotifications(getMyNotifications().map(n=>({...n,read:true})));showToast('Todas las notificaciones marcadas como leídas');}
     function clearAllNotifications(){if(!confirm('¿Quieres borrar todo el historial de notificaciones de tu usuario?'))return;saveMyNotifications([]);showToast('Historial de notificaciones borrado');}
-    function addPersistentNotification(title,message,p){
-      if(!currentUser)return;
-      const now=new Date();const items=getMyNotifications();
-      items.unshift({id:'ntf-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),title,message,projectId:p?.id||'',time:now.toISOString(),timeLabel:now.toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'}),read:false});
-      saveMyNotifications(items);
-    }
-    function notifyStageDone(p, stage, prop) {
-      if (p.fase !== 'OT') return;
-      const ot = '#' + String(p.codigoOT || p.codigoEstudio || '').replace(/^#/, '');
-      let action = stage;
-      if (prop === 'estadoLider' || prop === 'estadoApoyo') action = 'Planos carton hechos';
-      else if (prop === 'estadoGrafica') action = 'Preimpresion hechos';
-      else if (prop && prop.startsWith('maquina:')) action = prop.slice(8).replace('SwissQprint','Swiss') + ' Impreso';
-      const message = `${ot} • ${p.cliente || ''} • ${action}`;
-      addPersistentNotification(message, '', p);
-      if ('Notification' in window && Notification.permission === 'granted') {
-        try { new Notification(message, { body: '', tag: p.id + '-' + (prop || stage) }); } catch (e) {}
-      }
+    function notifyStageDone(p, stage) {
+      let code=p.fase==='OT'?String(p.codigoOT||'').trim():`EST-${String(p.codigoEstudio||'').trim()}`;
+      if(p.fase==='OT'&&!/^ot[-\s]/i.test(code))code='OT-'+code;
+      const message=`#${code.toLowerCase().replace(/\s+/g,'-')} • ${p.cliente} • ${stage}`;
+      showToast(message);
     }
 
     function checkStageTransition(p, prop, oldValue, newValue) {
       if (newValue !== 'Hecho' || oldValue === 'Hecho') return;
-      if (prop === 'estadoLider') notifyStageDone(p, 'Planos carton hechos', prop);
-      else if (prop === 'estadoApoyo') notifyStageDone(p, 'Planos carton hechos', prop);
-      else if (prop === 'estadoGrafica') notifyStageDone(p, 'Preimpresion hechos', prop);
-      else if (prop.startsWith('maquina:')) notifyStageDone(p, prop.slice(8).replace('SwissQprint','Swiss') + ' Impreso', prop);
+      if (prop === 'estadoLider') notifyStageDone(p, 'Planos ' + p.deptoLider + ' hechos');
+      else if (prop === 'estadoApoyo') notifyStageDone(p, 'Corte ' + p.deptoApoyo + ' hecho');
+      else if (prop === 'estadoGrafica') notifyStageDone(p, 'Preimpresión hechos');
+      else if (prop.startsWith('maquina:')) notifyStageDone(p, prop.slice(8).replace('SwissQprint','Swiss').replace('HP Latex','HP').replace('Vinilo Corte','Vinilo') + ' Impreso');
+      else if (prop === 'estadoCorte') notifyStageDone(p, 'Corte hecho');
+      else if (prop === 'estadoPlastificado') notifyStageDone(p, 'Plastificado hecho');
+      else if (prop === 'estadoEmpaquetado') notifyStageDone(p, 'Empaquetado hecho');
     }
 
-    function resetDemo() {
-      projects = getDefaultProjects();
-      clientesDB = normalizeClientsList(DEFAULT_CLIENTES_CRM);
-      saveState();
-      closeMobileSidebar();
-      renderCurrentView();
-      showToast("Datos de demostración restaurados");
-    }
+    async function resetDemo() { if(currentUser?.role!=='Administrador'){showToast('Solo un administrador puede borrar los datos demo');return;} if(!confirm('¿Borrar los proyectos, clientes y usuarios demo? Esta acción no se puede deshacer.'))return; try{await api('clearDemo');await refreshState();renderCurrentView();showToast('Datos demo borrados');}catch(err){showToast(err.message);} }
 
     function setGlobalPhaseFilter(phase) {
       globalPhaseFilter = phase;
@@ -1393,7 +1134,6 @@
 
     // ==================== UTILIDADES DE FECHAS Y PROGRESO ====================
     function getDaysUntilDelivery(fechaStr) {
-      fechaStr = normalizeISODate(fechaStr);
       if (!fechaStr) return 999;
       const [y, m, d] = fechaStr.split('-').map(Number);
       if (!y || !m || !d) return 999;
@@ -1405,10 +1145,10 @@
     }
 
     function formatShortDate(fechaStr) {
-      const iso = normalizeISODate(fechaStr);
-      if (!iso) return 'Sin fecha';
-      const [y,m,d] = iso.split('-');
-      return `${d}/${m}/${y}`;
+      if (!fechaStr) return 'Sin fecha';
+      const parts = fechaStr.split('-');
+      if (parts.length !== 3) return fechaStr;
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
 
     function calcProjectProgress(p) {
@@ -1563,96 +1303,46 @@
         'kanban-estructural': ['1. Kanban Oficina Técnica', 'Arrastra las tarjetas entre estados para Planos Generales y Montajes de Corte'],
         'kanban-grafica': ['2. Kanban Preimpresión (AAFF)', 'Seguimiento de artes finales y validación gráfica tanto de Estudios como de OTs'],
         'kanban-impresion': ['3. Kanban Impresión', 'Planificación de impresión para prototipos y tiradas de producción'],
-        'acabados': ['Acabados', 'Seguimiento de corte, plastificado y empaquetado de las OTs'],
-        'pedidos': ['Pedidos', 'Pedidos vinculados directamente a sus OTs'],
+        'kanban-acabados': ['Acabados', 'Seguimiento de corte, plastificado y empaquetado de las OTs'],
+        'pedidos': ['Pedidos', 'Pedidos de producción vinculados a sus OTs'],
         'clientes': ['Directorio de Clientes y Comerciales', 'Configura el comercial asignado por defecto a cada cuenta'],
         'usuarios': ['Usuarios y roles', 'Crea usuarios, asigna roles y activa o desactiva accesos'],
         'perfil': ['Mi perfil', 'Personaliza tu imagen, nombre y contraseña']
       };
 
+      if(!headers[view]){console.error('Vista desconocida:',view);return;}
       document.getElementById('view-title').innerText = headers[view][0];
       document.getElementById('view-subtitle').innerText = headers[view][1];
       renderCurrentView();
     }
 
     function renderCurrentView() {
+      if (savingState) return;
       updateBadges();
       const q = (document.getElementById('global-search')?.value || '').toLowerCase();
       const showFinished = document.getElementById('show-finished')?.checked ?? true;
 
       const filtered = projects.filter(p => {
-        const matchQ = String(p.codigoEstudio || '').toLowerCase().includes(q) ||
-                       String(p.codigoOT || '').toLowerCase().includes(q) ||
-                       String(p.cliente || '').toLowerCase().includes(q) ||
-                       String(p.comercial || '').toLowerCase().includes(q) ||
-                       String(p.titulo || '').toLowerCase().includes(q);
-        const matchPhase = globalPhaseFilter === 'ALL' || p.fase === globalPhaseFilter;
+        const matchQ = p.codigoEstudio.toLowerCase().includes(q) ||
+                       p.codigoOT.toLowerCase().includes(q) ||
+                       p.cliente.toLowerCase().includes(q) ||
+                       p.comercial.toLowerCase().includes(q) ||
+                       p.titulo.toLowerCase().includes(q);
+        const matchPhase = ['pedidos','kanban-acabados'].includes(currentView) ? p.fase === 'OT' : (globalPhaseFilter === 'ALL' || p.fase === globalPhaseFilter);
         const matchFin = showFinished ? true : !p.finalizado;
         return matchQ && matchPhase && matchFin;
       });
-
-      const countPill = document.getElementById('view-count-pill');
-      if (countPill) {
-        countPill.innerText = currentView === 'clientes'
-          ? `${clientesDB.length} clientes`
-          : `${filtered.length} ${filtered.length === 1 ? 'proyecto' : 'proyectos'}`;
-      }
 
       if (currentView === 'dashboard') renderDashboard(filtered);
       else if (currentView === 'tabla') renderTabla(filtered);
       else if (currentView === 'kanban-estructural') renderKanbanEstructural(filtered);
       else if (currentView === 'kanban-grafica') renderKanbanGrafica(filtered);
       else if (currentView === 'kanban-impresion') renderKanbanImpresion(filtered);
-      else if (currentView === 'acabados') renderAcabados();
-      else if (currentView === 'pedidos') renderPedidos();
+      else if (currentView === 'kanban-acabados') renderKanbanAcabados(filtered);
+      else if (currentView === 'pedidos') renderPedidos(filtered);
       else if (currentView === 'clientes') renderClientes();
       else if (currentView === 'usuarios') renderUsuarios();
       else if (currentView === 'perfil') renderMyProfile();
-    }
-
-    function renderAcabados() {
-      const ws = document.getElementById('workspace');
-      const ots = projects.filter(p => p.fase === 'OT');
-      const fields = [['corte','Corte'],['plastificado','Plastificado'],['empaquetado','Empaquetado']];
-      ws.innerHTML = `<div class="space-y-4">
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5"><h3 class="font-extrabold text-sm mb-1">Control de acabados</h3><p class="text-xs text-slate-500 dark:text-slate-400">Los estados se guardan dentro de cada OT y se sincronizan con Google Sheets.</p></div>
-        ${ots.length ? ots.map(p => `<article class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3">
-          <div class="flex flex-wrap justify-between gap-2"><div><h3 class="font-extrabold text-sm">#${escapeHtml(p.codigoOT || '')} · ${escapeHtml(p.cliente || '')}</h3><p class="text-xs text-slate-500 mt-1">${escapeHtml(p.titulo || '')}</p></div><span class="text-[11px] text-slate-500">Entrega: ${escapeHtml(formatShortDate(p.fechaEntrega))}</span></div>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">${fields.map(([key,label]) => `<label class="text-xs font-bold">${label}<select onchange="updateAcabado('${String(p.id).replace(/'/g,"\\'")}','${key}',this.value)" class="mt-1.5 w-full rounded-xl border border-slate-200 dark:border-slate-700 p-2.5 bg-white dark:bg-slate-800 text-sm">${ESTADOS_FLUJO.map(st=>`<option ${((p.acabados||{})[key]||'Pendiente')===st?'selected':''}>${st}</option>`).join('')}</select></label>`).join('')}</div>
-        </article>`).join('') : `<div class="p-10 text-center text-sm text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-dashed">Todavía no hay OTs. Crea o convierte un estudio en OT para gestionar sus acabados.</div>`}
-      </div>`;
-    }
-    function updateAcabado(projectId, key, value) {
-      const p = projects.find(x => String(x.id) === String(projectId)); if (!p) return;
-      if (!p.acabados) p.acabados = {corte:'Pendiente',plastificado:'Pendiente',empaquetado:'Pendiente'};
-      p.acabados[key] = value; saveState(); renderAcabados();
-    }
-    function renderPedidos() {
-      const ws = document.getElementById('workspace');
-      const ots = projects.filter(p => p.fase === 'OT');
-      ws.innerHTML = `<div class="space-y-4">
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3"><div><h3 class="font-extrabold text-sm">Pedidos asociados a OTs</h3><p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Cada pedido queda vinculado a una OT y se sincroniza con Google Sheets.</p></div><span class="text-xs font-bold rounded-lg bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 px-3 py-2">${ots.reduce((n,p)=>n+(p.pedidos||[]).length,0)} pedidos</span></div>
-        ${ots.length ? ots.map(p => `<article class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3">
-          <div class="flex flex-wrap items-center justify-between gap-2"><div><h3 class="font-extrabold text-sm">#${escapeHtml(p.codigoOT || '')} · ${escapeHtml(p.cliente || '')}</h3><p class="text-xs text-slate-500 mt-1">${escapeHtml(p.titulo || '')}</p></div><button onclick="addPedido('${String(p.id).replace(/'/g,"\\'")}')" class="rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-2"><i class="fa-solid fa-plus mr-1"></i>Añadir pedido</button></div>
-          ${(p.pedidos||[]).length ? `<div class="space-y-2">${p.pedidos.map((order,i)=>`<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 p-3"><div class="min-w-0"><p class="text-xs font-bold">${escapeHtml(order.nombre||('Pedido '+(i+1)))}</p><p class="text-[11px] text-slate-500 mt-1">${escapeHtml(order.cantidad||'')} ${escapeHtml(order.unidad||'uds.')} · Entrega: ${escapeHtml(formatShortDate(order.fecha))}</p></div><select onchange="updatePedidoEstado('${String(p.id).replace(/'/g,"\\'")}',${i},this.value)" class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 text-xs">${['Pendiente','En curso','Enviado','Recibido','Cancelado'].map(st=>`<option ${order.estado===st?'selected':''}>${st}</option>`).join('')}</select></div>`).join('')}</div>` : `<p class="text-xs text-slate-400 border border-dashed rounded-xl p-3">Sin pedidos vinculados.</p>`}
-        </article>`).join('') : `<div class="p-10 text-center text-sm text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-dashed">No hay OTs disponibles para vincular pedidos.</div>`}
-      </div>`;
-    }
-    function addPedido(projectId) {
-      const p = projects.find(x => String(x.id) === String(projectId)); if (!p) return;
-      const nombre = prompt('Nombre o referencia del pedido:'); if (nombre === null) return;
-      if (!nombre.trim()) { showToast('Indica una referencia para el pedido'); return; }
-      const cantidad = prompt('Cantidad (opcional):','1'); if (cantidad === null) return;
-      const fechaRaw = prompt('Fecha de entrega (AAAA-MM-DD, opcional):','');
-      const fecha = normalizeISODate(fechaRaw);
-      if (!Array.isArray(p.pedidos)) p.pedidos = [];
-      p.pedidos.push({id:'PED-'+Date.now(),nombre:nombre.trim(),cantidad:cantidad.trim(),unidad:'uds.',fecha,estado:'Pendiente',createdAt:new Date().toISOString()});
-      saveState(); renderPedidos(); showToast('Pedido vinculado a la OT');
-    }
-    function updatePedidoEstado(projectId, index, estado) {
-      const p = projects.find(x => String(x.id) === String(projectId));
-      if (!p || !Array.isArray(p.pedidos) || !p.pedidos[index]) return;
-      p.pedidos[index].estado = estado; saveState();
     }
 
     function renderThumbnailHTML(p, sizeClass = "w-14 h-14") {
@@ -2422,6 +2112,73 @@
       initSortable('impresion');
     }
 
+    function renderKanbanAcabados(list){
+      const ws=document.getElementById('workspace');
+      const ots=list.filter(p=>p.fase==='OT');
+      const stages=[
+        {key:'estadoCorte',label:'Corte',icon:'fa-scissors',colorClass:'text-orange-500'},
+        {key:'estadoPlastificado',label:'Plastificado',icon:'fa-layer-group',colorClass:'text-violet-500'},
+        {key:'estadoEmpaquetado',label:'Empaquetado',icon:'fa-box-open',colorClass:'text-emerald-500'}
+      ];
+      ws.innerHTML=`
+        <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-wrap items-center justify-between gap-3">
+          <div><h3 class="font-extrabold text-sm text-slate-900 dark:text-white">Acabados de producción</h3><p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Cada proceso queda guardado en la OT y se sincroniza con Google Sheets.</p></div>
+          <span class="text-xs font-bold text-slate-500 dark:text-slate-400">${ots.length} OTs</span>
+        </div>
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          ${stages.map(stage=>{
+            return `<section class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 p-3.5">
+              <div class="flex items-center justify-between gap-2 mb-3 px-1"><h4 class="font-extrabold text-xs uppercase tracking-wide text-slate-800 dark:text-slate-100"><i class="fa-solid ${stage.icon} mr-2 ${stage.colorClass}"></i>${stage.label}</h4><span class="rounded-full bg-white dark:bg-slate-800 px-2.5 py-1 text-[10px] font-bold text-slate-600 dark:text-slate-300">${ots.length}</span></div>
+              <div class="space-y-2.5 max-h-[70vh] overflow-y-auto custom-scroll">
+                ${ots.map(p=>{
+                  const code=escapeHtml(String(p.codigoOT||'OT sin número'));
+                  const status=p[stage.key]||'Pendiente';
+                  const style=(STATUS_THEME[status]||STATUS_THEME.Pendiente).select;
+                  return `<article class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 shadow-2xs">
+                    <button type="button" onclick="openDrawer('${escapeAttr(p.id)}')" class="w-full text-left">
+                      <span class="inline-flex rounded-md bg-indigo-600 px-2 py-0.5 font-mono-code text-[10px] font-bold text-white">#${code}</span>
+                      <span class="mt-1 block truncate text-xs font-bold text-slate-900 dark:text-white">${escapeHtml(p.cliente||'Sin cliente')}</span>
+                      <span class="mt-0.5 block truncate text-[10px] text-slate-500 dark:text-slate-400">${escapeHtml(p.titulo||'')}</span>
+                    </button>
+                    <select aria-label="Estado de ${stage.label} para ${code}" onclick="event.stopPropagation()" onchange="updateProp('${escapeAttr(p.id)}','${stage.key}',this.value)" class="mt-2 w-full rounded-lg border px-2.5 py-2 text-xs font-bold ${style}">
+                      ${ESTADOS_FLUJO.map(s=>`<option value="${s}" ${status===s?'selected':''}>${s}</option>`).join('')}
+                    </select>
+                  </article>`;
+                }).join('')||'<p class="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-5 text-center text-xs text-slate-500">Todavía no hay OTs.</p>'}
+              </div>
+            </section>`;
+          }).join('')}
+        </div>`;
+    }
+
+    function renderPedidos(list){
+      const ws=document.getElementById('workspace');
+      const ots=list.filter(p=>p.fase==='OT').sort((a,b)=>{
+        if(!a.fechaEntrega)return 1;if(!b.fechaEntrega)return -1;
+        return a.fechaEntrega.localeCompare(b.fechaEntrega);
+      });
+      ws.innerHTML=`
+        <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-wrap items-center justify-between gap-3">
+          <div><h3 class="font-extrabold text-sm text-slate-900 dark:text-white">Pedidos vinculados a OTs</h3><p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Cada pedido corresponde a una OT; abre su ficha para consultar o editar los detalles.</p></div>
+          <button type="button" onclick="openNewProjectModal('OT')" class="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-3.5 py-2.5 text-xs font-bold text-white"><i class="fa-solid fa-plus mr-1.5"></i>Nuevo pedido / OT</button>
+        </div>
+        <div class="space-y-2.5">
+          ${ots.map(p=>{
+            const machines=Object.keys(p.maquinas||{}).map(escapeHtml).join(', ')||'Sin impresión asignada';
+            const due=p.fechaEntrega?formatShortDate(p.fechaEntrega):'Sin fecha de entrega';
+            const finished=p.finalizado;
+            return `<article class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2"><span class="rounded-md bg-indigo-600 px-2 py-1 font-mono-code text-[10px] font-bold text-white">#${escapeHtml(p.codigoOT||'OT sin número')}</span><span class="text-[10px] font-semibold ${finished?'text-emerald-600 dark:text-emerald-400':'text-amber-600 dark:text-amber-400'}">${finished?'Finalizada':'En producción'}</span></div>
+                <h4 class="mt-1 truncate text-sm font-bold text-slate-900 dark:text-white">${escapeHtml(p.cliente||'Sin cliente')} · ${escapeHtml(p.titulo||'')}</h4>
+                <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Entrega: ${escapeHtml(due)} <span class="mx-1">·</span> ${machines}</p>
+              </div>
+              <button type="button" onclick="openDrawer('${escapeAttr(p.id)}')" class="shrink-0 rounded-xl border border-slate-200 dark:border-slate-700 px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"><i class="fa-solid fa-arrow-up-right-from-square mr-1.5"></i>Abrir OT</button>
+            </article>`;
+          }).join('')||'<div class="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-8 text-center text-sm text-slate-500">No hay pedidos/OTs que coincidan con la búsqueda.</div>'}
+        </div>`;
+    }
+
     function initSortable(kanbanType) {
       document.querySelectorAll('.kanban-col').forEach(colEl => {
         new Sortable(colEl, {
@@ -2442,25 +2199,25 @@
                 const old = p.estadoLider;
                 p.estadoLider = newStatus;
                 checkStageTransition(p, 'estadoLider', old, newStatus);
-                showToast(`Plano General (${p.deptoLider}) → ${newStatus}`);
+                if(newStatus!=='Hecho')showToast(`Plano General (${p.deptoLider}) → ${newStatus}`);
               } else {
                 const old = p.estadoApoyo;
                 p.estadoApoyo = newStatus;
                 checkStageTransition(p, 'estadoApoyo', old, newStatus);
-                showToast(`Montaje Corte (${p.deptoApoyo}) → ${newStatus}`);
+                if(newStatus!=='Hecho')showToast(`Montaje Corte (${p.deptoApoyo}) → ${newStatus}`);
               }
             } else if (kanbanType === 'grafica') {
               const old = p.estadoGrafica;
               p.estadoGrafica = newStatus;
               checkStageTransition(p, 'estadoGrafica', old, newStatus);
-              showToast(`Preimpresión → ${newStatus}`);
+              if(newStatus!=='Hecho')showToast(`Preimpresión → ${newStatus}`);
             } else if (kanbanType === 'impresion') {
               const maq = card.getAttribute('data-maquina');
               if (maq && p.maquinas) {
                 const old = p.maquinas[maq];
                 p.maquinas[maq] = newStatus;
                 checkStageTransition(p, 'maquina:' + maq, old, newStatus);
-                showToast(`${maq} → ${newStatus}`);
+                if(newStatus!=='Hecho')showToast(`${maq} → ${newStatus}`);
               }
             }
             saveState();
@@ -3364,6 +3121,9 @@
         origenGrafica: document.getElementById('f-origen-grafica').value,
         estadoGrafica: 'Pendiente',
         maquinas: maquinasObj,
+        estadoCorte: 'Pendiente',
+        estadoPlastificado: 'Pendiente',
+        estadoEmpaquetado: 'Pendiente',
         fechaEntrega,
         urgente: document.getElementById('f-urgente').checked,
         finalizado: false,
@@ -3386,7 +3146,7 @@
       document.getElementById('conv-subtitle').innerText = `${p.cliente} (${p.comercial}) — ${p.titulo}`;
       document.getElementById('conv-estudio').value = p.codigoEstudio;
       document.getElementById('conv-ot').value = '26' + Math.floor(400 + Math.random() * 90);
-      document.getElementById('conv-entrega').value = normalizeISODate(p.fechaEntrega) || '2026-10-29';
+      document.getElementById('conv-entrega').value = p.fechaEntrega || '2026-10-29';
       document.getElementById('conv-urgente').checked = Boolean(p.urgente);
 
       const existingMaq = Object.keys(p.maquinas || {});
@@ -3559,7 +3319,7 @@
             </div>
             <div>
               <label class="block text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">Fecha de Salida / Entrega</label>
-              <input type="date" value="${normalizeISODate(p.fechaEntrega)}" onchange="updateProp('${p.id}','fechaEntrega',this.value)" class="w-full border border-slate-300 dark:border-slate-700 rounded-xl p-2 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold">
+              <input type="date" value="${p.fechaEntrega || ''}" onchange="updateProp('${p.id}','fechaEntrega',this.value)" class="w-full border border-slate-300 dark:border-slate-700 rounded-xl p-2 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold">
             </div>
           </div>
         </div>
@@ -3761,90 +3521,59 @@
       setTimeout(() => el.remove(), 3000);
     }
 
-    // ==================== USUARIOS Y ROLES (Google Sheets / Apps Script) ====================
+    // Autenticación, usuarios y roles validados por Apps Script en cada operación.
     const APP_ROLES = ['Comercial','Project Manager','Administrador','Diseño Estructural Permanente','Diseño estructural Cartón','Preimpresion','Impresion','Acabados','Logistica'];
     let appUsers = [];
     let currentUser = null;
-    let authBusy = false;
-    let authTokenMemory = '';
-    function getAuthToken(){ return authTokenMemory; }
-    function persistUsers(){ /* Los usuarios se guardan exclusivamente en Google Sheets mediante Apps Script. */ }
-    function showLoginError(message){const el=document.getElementById('login-error');if(el){el.textContent=message||'Usuario o contraseña incorrectos.';el.classList.remove('hidden');}}
-    function loginLocal(e){
-      e.preventDefault(); if(authBusy)return;
-      const username=document.getElementById('login-user').value.trim();
-      const password=document.getElementById('login-pass').value;
-      if(!isAppsScriptWebApp()){showLoginError('Abre la intranet desde la URL publicada de Google Apps Script.');return;}
-      authBusy=true; document.getElementById('login-error').classList.add('hidden');
-      google.script.run.withSuccessHandler(result=>{
-        authBusy=false;
-        if(!result||!result.ok||!result.token||!result.user){showLoginError('Usuario o contraseña incorrectos, o usuario desactivado.');return;}
-        authTokenMemory = result.token;
-        
-        currentUser=result.user; appUsers=[];
-        completeLogin_(result.user);
-      }).withFailureHandler(err=>{authBusy=false;showLoginError('No se ha podido validar el acceso: '+(err&&err.message?err.message:'error de conexión'));})
-      .loginUser(username,password);
+    let authToken = '';
+    function setLoginLoading(isLoading){
+      const button=document.getElementById('login-submit'),label=document.getElementById('login-submit-label'),status=document.getElementById('login-loading');
+      if(button)button.disabled=isLoading;if(label)label.textContent=isLoading?'Consultando…':'Entrar';if(status)status.classList.toggle('hidden',!isLoading);
     }
-    function completeLogin_(user){
-      currentUser=user;
-      const loginScreen=document.getElementById('login-screen');
-      try {
-        document.getElementById('login-pass').value='';
-        updateNotificationCenter();
-        const head=document.getElementById('view-subtitle');
-        if(head) head.innerText = 'Control visual rápido de prioridades en planta, próximas salidas y agenda mensual · Sesión: ' + (user.name || user.username) + ' (' + (user.role || 'Usuario') + ')';
-        applyRoleAccess();
-        refreshProfileHeader();
-        renderCurrentView();
-        if(loginScreen) loginScreen.classList.add('hidden');
-        loadUsersForAdmin_();
-        initializeCloudSync();
-      } catch(err) {
-        console.error('Error al mostrar la intranet tras iniciar sesión:', err);
-        if(loginScreen) loginScreen.classList.add('hidden');
-        showAppFatalError_('La sesión se ha validado, pero ha fallado la carga de la intranet: ' + (err && err.message ? err.message : String(err)));
-      }
+    async function loginLocal(e){
+      e.preventDefault(); const username=document.getElementById('login-user').value.trim(); const password=document.getElementById('login-pass').value;
+      const error=document.getElementById('login-error');if(error){error.classList.add('hidden');error.textContent='';}setLoginLoading(true);
+      try { const result=await api('login',{username,password}); authToken=result.token; currentUser=result.user; appUsers=result.users||[]; notifications=result.notifications||[]; await refreshState(); document.getElementById('login-screen').classList.add('hidden'); document.getElementById('login-pass').value=''; const head=document.getElementById('view-subtitle'); if(head)head.innerText += ` · Sesión: ${currentUser.name} (${currentUser.role})`; applyRoleAccess(); refreshProfileHeader(); updateNotificationCenter(); renderCurrentView(); }
+      catch(err){if(error){error.classList.remove('hidden');error.textContent=err.message||'Usuario o contraseña incorrectos';}}
+      finally{setLoginLoading(false);}
     }
-
-    function showAppFatalError_(message){
-      let box=document.getElementById('plv-fatal-error');
-      if(!box){
-        box=document.createElement('div');
-        box.id='plv-fatal-error';
-        box.className='fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/90 p-5';
-        document.body.appendChild(box);
-      }
-      box.innerHTML='<div class="max-w-xl w-full rounded-2xl bg-white dark:bg-slate-900 p-6 shadow-2xl"><h2 class="text-lg font-extrabold text-rose-600 mb-2">Error al cargar la intranet</h2><p class="text-sm mb-4">La autenticación se ha completado, pero la interfaz ha encontrado un error.</p><pre class="whitespace-pre-wrap break-words text-xs bg-slate-100 dark:bg-slate-800 rounded-xl p-3 mb-4"></pre><div class="flex gap-2"><button id="plv-fatal-reload" class="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm font-bold">Recargar</button><button id="plv-fatal-logout" class="rounded-xl border px-4 py-2 text-sm font-bold">Cerrar sesión</button></div></div>';
-      const pre=box.querySelector('pre'); if(pre) pre.textContent=message;
-      box.querySelector('#plv-fatal-reload').onclick=()=>location.reload();
-      box.querySelector('#plv-fatal-logout').onclick=()=>logoutLocal();
+    async function refreshState({notifyIncoming=false}={}){const previousIds=new Set(notifications.map(n=>n.id));const result=await api('load');projects=normalizeProjectsList(result.projects||[]);clientesDB=normalizeClientsList(result.clients||[]);comerciales=result.comerciales||[];appUsers=result.users||appUsers;notifications=result.notifications||notifications;updateBadges();updateNotificationCenter();if(notifyIncoming)notifyNewNotifications(previousIds);}
+    function notifyNewNotifications(previousIds){
+      notifications.filter(n=>n&&!n.read&&!previousIds.has(n.id)).forEach(n=>{
+        let sentToSystem=false;
+        if('Notification' in window&&Notification.permission==='granted'){
+          try{new Notification(n.title||n.message||'ADAEQUO PLV',{body:n.title?n.message:'',tag:String(n.id)});sentToSystem=true;}catch(_){}
+        }
+        if(!sentToSystem&&document.visibilityState==='visible')showToast(n.message||n.title||'Nueva notificación');
+      });
     }
-    function resumeServerSession_(){ /* No se persiste el token en el navegador. */ }
-    function applyRoleAccess(){
-      const role=currentUser?.role; const admin=role==='Administrador';
-      document.querySelectorAll('[onclick*="openNewProjectModal"]').forEach(el=>el.classList.remove('hidden'));
-      const userNav=document.getElementById('nav-usuarios');if(userNav)userNav.classList.toggle('hidden',!admin);
+    let notificationPollRunning=false;
+    async function pollNotifications(){
+      if(!authToken||notificationPollRunning)return;notificationPollRunning=true;
+      try{const oldIds=new Set(notifications.map(n=>n.id));notifications=await api('notifications');updateNotificationCenter();notifyNewNotifications(oldIds);}
+      catch(err){if(/sesión|desactivado/i.test(err.message||''))logoutLocal();}
+      finally{notificationPollRunning=false;}
     }
-    function loadUsersForAdmin_(){
-      if(currentUser?.role!=='Administrador'||!getAuthToken())return;
-      google.script.run.withSuccessHandler(users=>{appUsers=Array.isArray(users)?users:[];if(document.getElementById('view-usuarios')&&!document.getElementById('view-usuarios').classList.contains('hidden'))renderUsuarios();})
-        .withFailureHandler(err=>showToast('No se pudieron cargar los usuarios: '+(err&&err.message?err.message:'')))
-        .listUsers(getAuthToken());
+    async function refreshFromSheets(){
+      if(!authToken){showToast('Inicia sesión para actualizar los datos');return;}
+      if(savingState){showToast('Espera a que termine el guardado actual');return;}
+      const button=document.getElementById('refresh-data-btn'),icon=document.getElementById('refresh-data-icon');
+      if(button)button.disabled=true;if(icon)icon.classList.add('fa-spin');
+      try{await refreshState({notifyIncoming:true});renderCurrentView();}
+      catch(err){showToast('No se pudieron actualizar los datos: '+err.message);if(/sesión|desactivado/i.test(err.message||''))logoutLocal();}
+      finally{if(button)button.disabled=false;if(icon)icon.classList.remove('fa-spin');}
     }
+    function applyRoleAccess(){const admin=currentUser?.role==='Administrador';document.querySelectorAll('[onclick*="openNewProjectModal"]').forEach(el=>el.classList.remove('hidden'));const userNav=document.getElementById('nav-usuarios');if(userNav)userNav.classList.toggle('hidden',!admin);document.querySelectorAll('[onclick*="resetDemo"]').forEach(el=>el.classList.toggle('hidden',!admin));}
     function renderUsuarios(){
-      const ws=document.getElementById('workspace');if(!ws)return;
-      if(currentUser?.role!=='Administrador'){ws.innerHTML='<div class="p-6 rounded-2xl bg-white dark:bg-slate-900 border dark:border-slate-800 text-sm">Solo Administrador puede gestionar usuarios.</div>';return;}
-      ws.innerHTML=`<div class="grid grid-cols-1 xl:grid-cols-3 gap-5"><form onsubmit="saveAppUser(event)" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 space-y-3"><h3 class="font-extrabold text-sm">Crear usuario</h3><label class="block text-xs font-bold">Nombre visible<input id="usr-name" required maxlength="80" class="mt-1 w-full border rounded-xl p-2.5 bg-white dark:bg-slate-800 dark:border-slate-700"></label><label class="block text-xs font-bold">Usuario de acceso<input id="usr-login" required pattern="[A-Za-z0-9._-]+" class="mt-1 w-full border rounded-xl p-2.5 bg-white dark:bg-slate-800 dark:border-slate-700"></label><label class="block text-xs font-bold">Contraseña inicial<input id="usr-password" required minlength="8" type="password" autocomplete="new-password" class="mt-1 w-full border rounded-xl p-2.5 bg-white dark:bg-slate-800 dark:border-slate-700"></label><label class="block text-xs font-bold">Rol<select id="usr-role" class="mt-1 w-full border rounded-xl p-2.5 bg-white dark:bg-slate-800 dark:border-slate-700">${APP_ROLES.map(r=>`<option>${escapeHtml(r)}</option>`).join('')}</select></label><button class="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl p-2.5 font-bold">Crear usuario</button><p class="text-[10px] text-slate-500">Los usuarios, roles y contraseñas se administran en la pestaña Usuarios de Google Sheets. Las contraseñas se guardan como hash, no en texto plano.</p></form><div class="xl:col-span-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5"><div class="flex items-center justify-between gap-3 mb-3"><h3 class="font-extrabold text-sm">Usuarios registrados (${appUsers.length})</h3><button onclick="loadUsersForAdmin_()" class="px-3 py-1.5 rounded-lg border text-xs font-bold">Actualizar</button></div><div class="space-y-2">${appUsers.map(u=>`<div class="flex flex-wrap items-center gap-3 justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700"><div><p class="font-bold text-sm">${escapeHtml(u.name)} <span class="text-xs font-normal text-slate-500">@${escapeHtml(u.username)}</span></p><p class="text-xs text-indigo-600 dark:text-indigo-300">${escapeHtml(u.role)} · ${u.active===false?'Desactivado':'Activo'}</p></div><div class="flex gap-2"><button onclick="changeUserRole('${u.id}')" class="px-3 py-1.5 rounded-lg border text-xs font-bold">Cambiar rol</button>${u.id!==currentUser.id?`<button onclick="toggleUserActive('${u.id}')" class="px-3 py-1.5 rounded-lg border text-xs font-bold ${u.active===false?'text-emerald-600':'text-rose-600'}">${u.active===false?'Activar':'Desactivar'}</button>`:''}</div></div>`).join('')}</div></div></div>`;
+      if(currentUser?.role!=='Administrador'){document.getElementById('workspace').innerHTML='<div class="p-6 rounded-2xl bg-white dark:bg-slate-900 border dark:border-slate-800 text-sm">Solo Administrador puede gestionar usuarios.</div>';return;}
+      const ws=document.getElementById('workspace');
+      ws.innerHTML=`<div class="grid grid-cols-1 xl:grid-cols-3 gap-5"><form onsubmit="saveAppUser(event)" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 space-y-3"><h3 class="font-extrabold text-sm">Crear usuario</h3><label class="block text-xs font-bold">Nombre visible<input id="usr-name" required class="mt-1 w-full border rounded-xl p-2.5 bg-white dark:bg-slate-800 dark:border-slate-700"></label><label class="block text-xs font-bold">Usuario de acceso<input id="usr-login" required pattern="[A-Za-z0-9._-]+" class="mt-1 w-full border rounded-xl p-2.5 bg-white dark:bg-slate-800 dark:border-slate-700"></label><label class="block text-xs font-bold">Contraseña inicial<input id="usr-password" required minlength="10" type="password" class="mt-1 w-full border rounded-xl p-2.5 bg-white dark:bg-slate-800 dark:border-slate-700"></label><label class="block text-xs font-bold">Rol<select id="usr-role" class="mt-1 w-full border rounded-xl p-2.5 bg-white dark:bg-slate-800 dark:border-slate-700">${APP_ROLES.map(r=>`<option>${r}</option>`).join('')}</select></label><button class="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl p-2.5 font-bold">Crear usuario</button><p class="text-[10px] text-slate-500">Las contraseñas se guardan como hash en la hoja Users.</p></form><div class="xl:col-span-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5"><h3 class="font-extrabold text-sm mb-3">Usuarios registrados (${appUsers.length})</h3><div class="space-y-2">${appUsers.map(u=>`<div class="flex flex-wrap items-center gap-3 justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700"><div><p class="font-bold text-sm">${escapeHtml(u.name)} <span class="text-xs font-normal text-slate-500">@${escapeHtml(u.username)}</span></p><p class="text-xs text-indigo-600 dark:text-indigo-300">${escapeHtml(u.role)} · ${u.active===false?'Desactivado':'Activo'}</p></div><div class="flex gap-2"><button onclick="changeUserRole('${u.id}')" class="px-3 py-1.5 rounded-lg border text-xs font-bold">Cambiar rol</button>${u.id!==currentUser.id?`<button onclick="toggleUserActive('${u.id}')" class="px-3 py-1.5 rounded-lg border text-xs font-bold">${u.active===false?'Activar':'Desactivar'}</button><button onclick="deleteAppUser('${u.id}')" class="px-3 py-1.5 rounded-lg border text-xs font-bold text-rose-600">Eliminar</button>`:''}</div></div>`).join('')}</div></div></div>`;
     }
-    function saveAppUser(e){
-      e.preventDefault();if(currentUser?.role!=='Administrador')return;
-      const user={name:document.getElementById('usr-name').value.trim(),username:document.getElementById('usr-login').value.trim(),password:document.getElementById('usr-password').value,role:document.getElementById('usr-role').value};
-      google.script.run.withSuccessHandler(()=>{document.getElementById('usr-password').value='';document.getElementById('usr-name').value='';document.getElementById('usr-login').value='';loadUsersForAdmin_();showToast('Usuario creado en Google Sheets');})
-        .withFailureHandler(err=>showToast('No se pudo crear el usuario: '+(err&&err.message?err.message:''))).createUser(user,getAuthToken());
-    }
-    function changeUserRole(id){if(currentUser?.role!=='Administrador')return;const answer=prompt('Nuevo rol:\n'+APP_ROLES.map((r,i)=>`${i+1}. ${r}`).join('\n'));const n=Number(answer);if(Number.isInteger(n)&&n>=1&&n<=APP_ROLES.length){google.script.run.withSuccessHandler(loadUsersForAdmin_).withFailureHandler(err=>showToast('Error: '+err.message)).setUserRole(id,APP_ROLES[n-1],getAuthToken());}}
-    function toggleUserActive(id){if(currentUser?.role!=='Administrador')return;google.script.run.withSuccessHandler(loadUsersForAdmin_).withFailureHandler(err=>showToast('Error: '+err.message)).toggleUserActive(id,getAuthToken());}
+    function escapeHtml(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+    async function saveAppUser(e){e.preventDefault();if(currentUser?.role!=='Administrador')return;try{await api('createUser',{name:document.getElementById('usr-name').value.trim(),username:document.getElementById('usr-login').value.trim(),password:document.getElementById('usr-password').value,role:document.getElementById('usr-role').value});await refreshState();renderUsuarios();showToast('Usuario creado en Google Sheets');}catch(err){showToast(err.message);}}
+    async function changeUserRole(id){const role=prompt('Nuevo rol:\n'+APP_ROLES.map((r,i)=>`${i+1}. ${r}`).join('\n'));const n=Number(role);if(Number.isInteger(n)&&n>=1&&n<=APP_ROLES.length){try{await api('updateUser',{id,role:APP_ROLES[n-1]});await refreshState();renderUsuarios();}catch(err){showToast(err.message);}}}
+    async function toggleUserActive(id){try{await api('toggleUser',{id});await refreshState();renderUsuarios();}catch(err){showToast(err.message);}}
+    async function deleteAppUser(id){if(confirm('¿Eliminar este usuario de la hoja Users?')){try{await api('deleteUser',{id});await refreshState();renderUsuarios();}catch(err){showToast(err.message);}}}
 
     // ==================== PERFIL DE USUARIO ====================
     function defaultAvatarData(name){
@@ -3871,8 +3600,7 @@
       switchView('perfil');
     }
     function logoutLocal(){
-      const token=getAuthToken();if(token&&isAppsScriptWebApp())google.script.run.logoutUser(token);
-      authTokenMemory = '';currentUser=null;cloudReady=false;cloudStarted=false;
+      if(authToken)api('logout').catch(()=>{});authToken='';currentUser=null;appUsers=[];projects=[];clientesDB=[];comerciales=[];notifications=[];
       document.getElementById('profile-menu')?.classList.add('hidden');
       document.getElementById('login-pass').value='';
       document.getElementById('login-error').classList.add('hidden');
@@ -3886,14 +3614,15 @@
           <div class="flex items-center gap-4 mb-6"><img src="${avatar}" id="profile-preview" alt="Imagen de perfil" class="w-20 h-20 rounded-full object-cover border-4 border-indigo-100 dark:border-indigo-900 bg-slate-100 dark:bg-slate-800"><div><h3 class="font-extrabold text-lg text-slate-900 dark:text-white">Configurar mi perfil</h3><p class="text-xs text-slate-500 dark:text-slate-400">Actualiza tu imagen y tus datos personales.</p><p class="text-[11px] text-indigo-600 dark:text-indigo-300 mt-1">${escapeHtml(currentUser.role)}</p></div></div>
           <form onsubmit="saveMyProfile(event)" class="space-y-5">
             <div><label class="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-2">Imagen de perfil</label><div class="flex flex-wrap items-center gap-3"><label class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold cursor-pointer"><i class="fa-solid fa-camera"></i> Subir imagen<input id="profile-avatar-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden" onchange="previewProfileAvatar(event)"></label><button type="button" onclick="removeProfileAvatar()" class="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">Usar inicial</button><span class="text-[10px] text-slate-500">JPG, PNG, WEBP o GIF. Se ajusta para ahorrar espacio.</span></div></div>
+            <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 p-4"><div><h4 class="text-sm font-bold text-slate-800 dark:text-slate-100">Notificaciones de este dispositivo</h4><p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Permite que el navegador muestre avisos del sistema.</p></div><button type="button" id="notify-enable" onclick="enableNotifications()" class="px-3 py-2 rounded-xl text-xs font-semibold bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/70 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/60 transition cursor-pointer flex items-center gap-1.5" title="Activar notificaciones de escritorio"><i class="fa-regular fa-bell"></i><span>Avisos sistema</span></button></div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4"><label class="block text-xs font-bold text-slate-700 dark:text-slate-200">Nombre visible<input id="profile-name-input" required maxlength="80" value="${escapeHtml(currentUser.name||'')}" class="mt-1.5 w-full border border-slate-200 dark:border-slate-700 rounded-xl p-3 bg-white dark:bg-slate-800 text-sm"></label><label class="block text-xs font-bold text-slate-700 dark:text-slate-200">Usuario de acceso<input value="${escapeHtml(currentUser.username||'')}" disabled class="mt-1.5 w-full border border-slate-200 dark:border-slate-700 rounded-xl p-3 bg-slate-100 dark:bg-slate-800/60 text-sm opacity-70"><span class="block mt-1 text-[10px] text-slate-500">El nombre de usuario no se puede modificar.</span></label></div>
-            <div class="border-t border-slate-100 dark:border-slate-800 pt-4"><h4 class="font-bold text-sm mb-3 text-slate-800 dark:text-slate-100">Cambiar contraseña</h4><label class="block text-xs font-bold text-slate-700 dark:text-slate-200">Nueva contraseña (opcional)<input id="profile-new-password" type="password" minlength="8" autocomplete="new-password" placeholder="Deja vacío para mantener la actual" class="mt-1.5 w-full border border-slate-200 dark:border-slate-700 rounded-xl p-3 bg-white dark:bg-slate-800 text-sm"></label></div>
+            <div class="border-t border-slate-100 dark:border-slate-800 pt-4"><h4 class="font-bold text-sm mb-3 text-slate-800 dark:text-slate-100">Cambiar contraseña</h4><label class="block text-xs font-bold text-slate-700 dark:text-slate-200">Nueva contraseña (opcional)<input id="profile-new-password" type="password" minlength="10" autocomplete="new-password" placeholder="Deja vacío para mantener la actual" class="mt-1.5 w-full border border-slate-200 dark:border-slate-700 rounded-xl p-3 bg-white dark:bg-slate-800 text-sm"></label></div>
             <div class="flex flex-wrap gap-3"><button type="submit" class="px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-sm"><i class="fa-solid fa-floppy-disk mr-2"></i>Guardar cambios</button><button type="button" onclick="switchView('dashboard')" class="px-5 py-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">Cancelar</button></div>
-            <p class="text-[10px] leading-relaxed text-amber-700 dark:text-amber-300">Tu perfil y tus datos de acceso se guardan en la pestaña Usuarios de Google Sheets. Los estudios, OTs, clientes y comerciales también se sincronizan con la hoja compartida.</p>
+            <p class="text-[10px] leading-relaxed text-amber-700 dark:text-amber-300">Los cambios se guardan en Google Sheets. La sesión solo permanece en memoria y se cierra al recargar o salir.</p>
           </form>
         </div>
       </div>`;
-      const c=document.getElementById('view-count-pill');if(c)c.innerText='Perfil personal';
+      syncNotificationButton();
     }
     let pendingProfileAvatar='';
     function previewProfileAvatar(event){
@@ -3911,33 +3640,22 @@
       };reader.readAsDataURL(file);
     }
     function removeProfileAvatar(){pendingProfileAvatar='__REMOVE__';const preview=document.getElementById('profile-preview');if(preview)preview.src=defaultAvatarData(currentUser?.name);const file=document.getElementById('profile-avatar-file');if(file)file.value='';}
-    function saveMyProfile(event){
+    async function saveMyProfile(event){
       event.preventDefault();if(!currentUser)return;
       const newName=document.getElementById('profile-name-input').value.trim();const newPassword=document.getElementById('profile-new-password').value;
       if(!newName){showToast('El nombre no puede estar vacío');return;}
-      if(newPassword&&newPassword.length<8){showToast('La contraseña debe tener al menos 8 caracteres');return;}
-      const profile={name:newName,avatar:pendingProfileAvatar==='__REMOVE__'?'':(pendingProfileAvatar||currentUser.avatar||''),password:newPassword};
-      google.script.run.withSuccessHandler(updated=>{
-        currentUser=updated;pendingProfileAvatar='';refreshProfileHeader();
-        const sub=document.getElementById('view-subtitle');if(sub)sub.textContent='Personaliza tu imagen, nombre y contraseña';
-        showToast('Perfil actualizado correctamente');renderMyProfile();refreshProfileHeader();
-      }).withFailureHandler(err=>showToast('No se ha podido guardar: '+(err&&err.message?err.message:'error'))).updateMyProfile(profile,getAuthToken());
+      if(newPassword&&newPassword.length<10){showToast('La contraseña debe tener al menos 10 caracteres');return;}
+      try{const updated=await api('updateProfile',{name:newName,password:newPassword||'',avatar:pendingProfileAvatar==='__REMOVE__'?'':(pendingProfileAvatar||currentUser.avatar||'')});currentUser=updated.user;pendingProfileAvatar='';refreshProfileHeader();showToast('Perfil actualizado en Google Sheets');renderMyProfile();refreshProfileHeader();}
+      catch(err){showToast('No se pudo guardar: '+err.message);}
     }
-
-    window.addEventListener('error', function(event){
-      console.error('Error JavaScript PLV:', event.error || event.message);
-      const loginVisible = !document.getElementById('login-screen')?.classList.contains('hidden');
-      if (!loginVisible) showAppFatalError_((event.message || 'Error JavaScript') + (event.filename ? '\nArchivo: ' + event.filename : '') + (event.lineno ? '\nLínea: ' + event.lineno : ''));
-    });
-    window.addEventListener('unhandledrejection', function(event){
-      console.error('Promesa rechazada PLV:', event.reason);
-      const loginVisible = !document.getElementById('login-screen')?.classList.contains('hidden');
-      if (!loginVisible) showAppFatalError_('Error de operación: ' + (event.reason && event.reason.message ? event.reason.message : String(event.reason)));
-    });
 
     // Inicializar la aplicación en el Dashboard
     switchView('dashboard');
-
+    syncNotificationButton();
+    // No se restaura ninguna sesión desde almacenamiento local: al recargar, se vuelve a autenticar.
+    setInterval(async()=>{if(!authToken||savingState)return;try{await refreshState({notifyIncoming:true});renderCurrentView();}catch(err){if(/sesión|desactivado/i.test(err.message||''))logoutLocal();}},60000);
+    setInterval(pollNotifications,20000);
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pollNotifications();});
   </script>
 </body>
 </html>
