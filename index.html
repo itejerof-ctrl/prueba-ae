@@ -253,7 +253,7 @@
             <button onclick="switchView('clientes')" id="nav-clientes" class="nav-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium text-left transition-all cursor-pointer">
               <span class="flex items-center gap-3 truncate">
                 <i class="fa-solid fa-address-book w-4 text-center text-emerald-400 shrink-0"></i>
-                <span class="truncate">Clientes y Comerciales</span>
+                <span class="truncate">Clientes</span>
               </span>
               <span id="badge-clientes" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 shrink-0">0</span>
             </button>
@@ -746,14 +746,6 @@
   <!-- Contenedor de Notificaciones Toast -->
   <div id="toast-container" class="fixed bottom-4 right-4 z-50 space-y-2 pointer-events-none max-w-[90vw]"></div>
 
-  <!-- Indicador de guardado en Google Sheets -->
-  <div id="saving-overlay" class="fixed inset-0 z-[90] hidden items-center justify-center bg-slate-950/35 backdrop-blur-[2px] p-4" role="status" aria-live="polite" aria-atomic="true">
-    <div class="flex min-w-52 items-center gap-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-6 py-5 shadow-2xl">
-      <i class="fa-solid fa-circle-notch animate-spin text-xl text-indigo-600 dark:text-indigo-400" aria-hidden="true"></i>
-      <span class="text-sm font-bold text-slate-800 dark:text-slate-100">Guardando cambios…</span>
-    </div>
-  </div>
-
   <!-- ==================== LÓGICA JAVASCRIPT ==================== -->
   <script>
     // Constantes del flujo operativo
@@ -816,7 +808,6 @@
     let clientFilterSector = 'ALL';
     let clientSearchQuery = '';
     let tempClientModalLogo = '';
-    let showNewComercialInput = false;
 
     // Calendario posicionado en Octubre 2026 por defecto
     let calMonth = new Date().getMonth();
@@ -915,20 +906,16 @@
     function beginSaving(){
       saveRequestsInFlight++;
       savingState=true;
-      const overlay=document.getElementById('saving-overlay');
-      if(overlay){overlay.classList.remove('hidden');overlay.classList.add('flex');}
     }
     function endSaving(){
       saveRequestsInFlight=Math.max(0,saveRequestsInFlight-1);
       savingState=saveRequestsInFlight>0;
-      const overlay=document.getElementById('saving-overlay');
-      if(overlay){overlay.classList.toggle('hidden',!savingState);overlay.classList.toggle('flex',savingState);}
     }
     async function saveState() {
       if (!authToken) return;
       const previousNotificationIds=new Set(notifications.map(n=>n.id));
       try {
-        const result = await api('saveState', { projects, clients: clientesDB, comerciales });
+        const result = await api('saveState', { projects, clients: clientesDB });
         projects = normalizeProjectsList(result.projects || []);
         clientesDB = normalizeClientsList(result.clients || []);
         comerciales = result.comerciales || [];
@@ -1305,7 +1292,7 @@
         'kanban-impresion': ['3. Kanban Impresión', 'Planificación de impresión para prototipos y tiradas de producción'],
         'kanban-acabados': ['Acabados', 'Seguimiento de corte, plastificado y empaquetado de las OTs'],
         'pedidos': ['Pedidos', 'Pedidos de producción vinculados a sus OTs'],
-        'clientes': ['Directorio de Clientes y Comerciales', 'Configura el comercial asignado por defecto a cada cuenta'],
+        'clientes': ['Clientes', 'Directorio y seguimiento de cuentas'],
         'usuarios': ['Usuarios y roles', 'Crea usuarios, asigna roles y activa o desactiva accesos'],
         'perfil': ['Mi perfil', 'Personaliza tu imagen, nombre y contraseña']
       };
@@ -2319,29 +2306,6 @@
       renderClientes();
     }
 
-    function toggleNewComercialBox() {
-      showNewComercialInput = !showNewComercialInput;
-      renderClientes();
-      if (showNewComercialInput) {
-        setTimeout(() => document.getElementById('new-comercial-name')?.focus(), 50);
-      }
-    }
-
-    function addNewComercial(e) {
-      if (e) e.preventDefault();
-      const input = document.getElementById('new-comercial-name');
-      const val = (input?.value || '').trim();
-      if (!val) return;
-      if (!comerciales.includes(val)) {
-        comerciales.push(val);
-        saveState();
-        showToast(`Comercial "${val}" añadido al equipo`);
-      }
-      showNewComercialInput = false;
-      clientFilterComercial = val;
-      renderClientes();
-    }
-
     function openNewProjectForClient(clientIdOrName, fase, event) {
       if (event) event.stopPropagation();
       const found = clientesDB.find(c => c.id === clientIdOrName || c.nombre === clientIdOrName);
@@ -2717,20 +2681,7 @@
               }).join('')}
             </div>
 
-            <!-- Añadir nuevo comercial al equipo -->
-            <div class="flex items-center gap-1.5">
-              ${showNewComercialInput ? `
-                <form onsubmit="addNewComercial(event)" class="flex items-center gap-1">
-                  <input type="text" id="new-comercial-name" placeholder="Nombre comercial..." class="bg-slate-100 dark:bg-slate-800 border border-indigo-300 dark:border-indigo-700 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 dark:text-white focus:outline-none">
-                  <button type="submit" class="px-2.5 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold cursor-pointer">Añadir</button>
-                  <button type="button" onclick="toggleNewComercialBox()" class="px-2 py-1 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
-                </form>
-              ` : `
-                <button onclick="toggleNewComercialBox()" class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline px-2 py-1 cursor-pointer">
-                  <i class="fa-solid fa-user-plus mr-1"></i> Añadir Comercial
-                </button>
-              `}
-            </div>
+            <p class="text-[11px] text-slate-500">Los comerciales se gestionan en <strong>Usuarios y roles</strong>, con el rol Comercial.</p>
           </div>
         </div>
 
