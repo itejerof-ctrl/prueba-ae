@@ -7,7 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     // URL de implementación de Apps Script. Sustituir al desplegar; no incluir secretos aquí.
-    const API_URL = 'PEGA_AQUI_URL_WEB_APP_APPS_SCRIPT';
+    const API_URL = 'https://script.google.com/macros/s/AKfycbzdhtyN_OUthnH4Npm0t3HkkGkQXsb-s7Z_999oiWHGW2Hfcg-HzzjA_OdXc9F-2gr_tg/exec';
     const apiFrames = new Map();
     function api(action, payload = {}) {
       if (!API_URL.startsWith('https://script.google.com/')) return Promise.reject(new Error('Configura la URL del Web App de Apps Script en API_URL.'));
