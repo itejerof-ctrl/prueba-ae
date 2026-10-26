@@ -1635,18 +1635,12 @@
       const ws = document.getElementById('workspace');
 
       const activeList = list.filter(p => !p.finalizado);
-      const urgentWorks = activeList.filter(p => p.urgente);
       const todayKey=localDateKey(new Date());
       const upcomingDeliveries = activeList
         .filter(p => !p.urgente && Boolean(p.fechaEntrega) && p.fechaEntrega>=todayKey)
         .sort((a, b) => a.fechaEntrega.localeCompare(b.fechaEntrega));
-      const upcomingIds=new Set(upcomingDeliveries.map(p=>p.id));
-      const studyWorks=activeList.filter(p=>!p.urgente&&!upcomingIds.has(p.id)&&p.fase==='ESTUDIO');
-      const otWorks=activeList.filter(p=>!p.urgente&&!upcomingIds.has(p.id)&&p.fase==='OT');
-
       const estudiosActivosCount = projects.filter(p => p.fase === 'ESTUDIO' && !p.finalizado).length;
       const otsActivasCount = projects.filter(p => p.fase === 'OT' && !p.finalizado).length;
-      const doneCount = projects.filter(p => p.finalizado).length;
 
       ws.innerHTML = `
         <!-- 4 KPIs Superiores Adaptables (2 cols en móvil, 4 en escritorio) -->
@@ -1664,16 +1658,29 @@
             </div>
           </div>
 
-          <div onclick="setGlobalPhaseFilter('ESTUDIO')" class="cursor-pointer bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-amber-200/90 dark:border-amber-900/60 shadow-2xs hover:border-amber-400 transition flex items-center justify-between">
+          <div class="bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-amber-200/90 dark:border-amber-900/60 shadow-2xs flex items-center justify-between">
             <div>
               <span class="inline-flex items-center gap-1 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-md">
+                Próximas entregas
+              </span>
+              <p class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white mt-1.5">${upcomingDeliveries.length}</p>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5 hidden sm:block">Con fecha prevista</p>
+            </div>
+            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-amber-50 dark:bg-amber-950/60 border border-amber-100 dark:border-amber-900 text-amber-600 dark:text-amber-400 flex items-center justify-center text-lg sm:text-xl shrink-0">
+              <i class="fa-solid fa-compass-drafting"></i>
+            </div>
+          </div>
+
+          <div onclick="setGlobalPhaseFilter('OT')" class="cursor-pointer bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-indigo-200/90 dark:border-indigo-900/60 shadow-2xs hover:border-indigo-400 transition flex items-center justify-between">
+            <div>
+              <span class="inline-flex items-center gap-1 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md">
                 Fase 1 · Estudios
               </span>
               <p class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white mt-1.5">${estudiosActivosCount}</p>
               <p class="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5 hidden sm:block">En desarrollo</p>
             </div>
-            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-amber-50 dark:bg-amber-950/60 border border-amber-100 dark:border-amber-900 text-amber-600 dark:text-amber-400 flex items-center justify-center text-lg sm:text-xl shrink-0">
-              <i class="fa-solid fa-compass-drafting"></i>
+            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-900 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-lg sm:text-xl shrink-0">
+              <i class="fa-solid fa-industry"></i>
             </div>
           </div>
 
@@ -1686,51 +1693,12 @@
               <p class="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5 hidden sm:block">Activas en fábrica</p>
             </div>
             <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-900 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-lg sm:text-xl shrink-0">
-              <i class="fa-solid fa-industry"></i>
-            </div>
-          </div>
-
-          <div onclick="switchView('tabla')" class="cursor-pointer bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-emerald-200/90 dark:border-emerald-900/60 shadow-2xs hover:border-emerald-400 transition flex items-center justify-between">
-            <div>
-              <span class="inline-flex items-center gap-1 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md">
-                Cerrados
-              </span>
-              <p class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white mt-1.5">${doneCount}</p>
-              <p class="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5 hidden sm:block">Finalizados (✓)</p>
-            </div>
-            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-100 dark:border-emerald-900 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-lg sm:text-xl shrink-0">
               <i class="fa-solid fa-circle-check"></i>
             </div>
           </div>
         </div>
 
-        <!-- Panel único de prioridades y entregas, alineado en altura con el calendario -->
-        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
-          <section class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-4 sm:p-5 shadow-2xs flex flex-col min-h-[620px] xl:h-[780px]">
-            <div class="flex items-center justify-between gap-2 pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div class="flex items-center gap-2.5">
-                <span class="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs"><i class="fa-solid fa-list-check"></i></span>
-                <div><h3 class="font-extrabold text-sm text-slate-900 dark:text-white">Prioridades y trabajos en curso</h3><p class="text-[11px] text-slate-500 dark:text-slate-400">Urgente · próxima entrega · en estudio · en OT</p></div>
-              </div>
-              <button onclick="switchView('tabla')" class="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline shrink-0 cursor-pointer">Ver tabla →</button>
-            </div>
-            <div class="grid grid-cols-2 gap-2 py-3">
-              <div class="rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 p-3"><div class="flex items-center gap-2 text-rose-700 dark:text-rose-300 text-xs font-extrabold"><i class="fa-solid fa-fire"></i> Urgente <span class="ml-auto rounded-full bg-rose-100 dark:bg-rose-900 px-2 py-0.5">${urgentWorks.length}</span></div></div>
-              <div class="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 p-3"><div class="flex items-center gap-2 text-amber-700 dark:text-amber-300 text-xs font-extrabold"><i class="fa-solid fa-truck-fast"></i> Próxima entrega <span class="ml-auto rounded-full bg-amber-100 dark:bg-amber-900 px-2 py-0.5">${upcomingDeliveries.length}</span></div></div>
-              <div class="rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/60 p-3"><div class="flex items-center gap-2 text-indigo-700 dark:text-indigo-300 text-xs font-extrabold"><i class="fa-solid fa-compass-drafting"></i> En estudio <span class="ml-auto rounded-full bg-indigo-100 dark:bg-indigo-900 px-2 py-0.5">${studyWorks.length}</span></div></div>
-              <div class="rounded-xl bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-900/60 p-3"><div class="flex items-center gap-2 text-cyan-700 dark:text-cyan-300 text-xs font-extrabold"><i class="fa-solid fa-industry"></i> En OT <span class="ml-auto rounded-full bg-cyan-100 dark:bg-cyan-900 px-2 py-0.5">${otWorks.length}</span></div></div>
-            </div>
-            <div class="flex-1 min-h-0 overflow-y-auto custom-scroll space-y-4 pr-1">
-              ${[
-                {title:'Urgente',items:urgentWorks,text:'text-rose-600 dark:text-rose-400',icon:'fa-fire-flame-curved'},
-                {title:'Próxima entrega',items:upcomingDeliveries,text:'text-amber-600 dark:text-amber-400',icon:'fa-truck-fast'},
-                {title:'En estudio',items:studyWorks,text:'text-indigo-600 dark:text-indigo-400',icon:'fa-compass-drafting'},
-                {title:'En OT',items:otWorks,text:'text-cyan-600 dark:text-cyan-400',icon:'fa-industry'}
-              ].map((bucket,index)=>`<div class="${index?'pt-3 border-t border-slate-100 dark:border-slate-800':''}"><h4 class="text-[10px] uppercase tracking-wider font-extrabold ${bucket.text} mb-2"><i class="fa-solid ${bucket.icon} mr-1"></i>${bucket.title}</h4><div class="space-y-2">${bucket.items.length?bucket.items.map(p=>renderDashboardCard(p,bucket.title==='Urgente')).join(''):`<div class="p-3 text-center rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-400">No hay trabajos en esta categoría.</div>`}</div></div>`).join('')}
-            </div>
-          </section>
-          <div class="min-w-0 xl:h-[780px]">${renderCalendarWidget(list)}</div>
-        </div>
+        <div class="min-w-0">${renderCalendarWidget(list)}</div>
       `;
     }
 
