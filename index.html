@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <title>ADAEQUO Intranet</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+  <title>ADAEQUO PLV v4.1 · Intranet Operativa de Estudios, OTs y Kanbans</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     // URL de implementación de Apps Script. Sustituir al desplegar; no incluir secretos aquí.
@@ -195,6 +197,9 @@
                 <span class="truncate">Urgencias & Entregas</span>
               </span>
               <span id="badge-urgentes" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 shrink-0" title="Trabajos urgentes activos">0</span>
+            </button>
+            <button onclick="switchView('facturacion')" id="nav-facturacion" class="nav-btn hidden w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium text-left transition-all cursor-pointer text-slate-300 hover:bg-slate-800/80 hover:text-white">
+              <i class="fa-solid fa-chart-column w-4 text-center text-emerald-400"></i><span>Facturación mensual</span>
             </button>
 
             <button onclick="switchView('tabla')" id="nav-tabla" class="nav-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium text-left transition-all cursor-pointer">
@@ -738,8 +743,7 @@
       <div><label class="block text-xs font-bold mb-1 text-slate-600 dark:text-slate-300">Usuario</label><input id="login-user" required autocomplete="username" class="w-full border rounded-xl p-3 bg-white dark:bg-slate-800 dark:border-slate-700 text-sm" placeholder="Tu usuario"></div>
       <div><label class="block text-xs font-bold mb-1 text-slate-600 dark:text-slate-300">Contraseña</label><input id="login-pass" type="password" required autocomplete="current-password" class="w-full border rounded-xl p-3 bg-white dark:bg-slate-800 dark:border-slate-700 text-sm" placeholder="Tu contraseña"></div>
       <p id="login-error" class="hidden text-xs text-rose-600 font-semibold">Usuario o contraseña incorrectos.</p>
-      <div id="login-loading" class="hidden text-center text-xs font-semibold text-indigo-600 dark:text-indigo-300"><i class="fa-solid fa-circle-notch fa-spin mr-2"></i>Consultando usuario y datos en Google Sheets…</div>
-      <button id="login-submit" class="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-wait text-white rounded-xl p-3 font-bold text-sm"><span id="login-submit-label">Entrar</span></button>
+      <button id="login-submit" class="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-wait text-white rounded-xl p-3 font-bold text-sm"><i id="login-submit-icon" class="fa-solid fa-circle-notch fa-spin mr-2 hidden" aria-hidden="true"></i><span id="login-submit-label">Entrar</span></button>
       <p class="text-[10px] text-slate-400 text-center">Tras inicializar Apps Script: <b>admin</b> / <b>Demo2026!!</b></p>
     </form>
   </div>
@@ -885,6 +889,7 @@
       const parsed=new Date(text);if(!Number.isNaN(parsed.getTime()))return `${parsed.getFullYear()}-${String(parsed.getMonth()+1).padStart(2,'0')}-${String(parsed.getDate()).padStart(2,'0')}`;
       return '';
     }
+    function localDateKey(date){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;}
 
     function normalizeProjectsList(list) {
       const str=v=>v===undefined||v===null?'':String(v);
@@ -901,6 +906,7 @@
     }
 
     let projects = [];
+    let billingDB = [];
     let companyConfig = {name:'ADAEQUO',icon:''};
 
     let savingState = false;
@@ -1289,11 +1295,13 @@
     }
 
     function switchView(view) {
+      if(['usuarios','facturacion'].includes(view)&&currentUser?.role!=='Administrador'){showToast('Solo Administrador puede abrir esta vista');return;}
       currentView = view;
       closeMobileSidebar();
       document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.className = "nav-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium text-left text-slate-300 hover:bg-slate-800/80 hover:text-white transition-all cursor-pointer";
       });
+      applyRoleAccess();
       const active = document.getElementById('nav-' + view);
       if (active) {
         active.className = "nav-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold text-left bg-indigo-600 text-white shadow-lg shadow-indigo-600/25 transition-all cursor-pointer";
@@ -1301,6 +1309,7 @@
 
       const headers = {
         'dashboard': ['Urgencias, Entregas y Calendario', 'Control visual rápido de prioridades en planta, próximas salidas y agenda mensual'],
+        'facturacion': ['Facturación mensual', 'Evolución de importes facturados por fecha de factura'],
         'tabla': ['Tabla Maestra de Proyectos', 'Gestión directa de estados, números de estudio, prioridad urgente y cierre de trabajos'],
         'kanban-estructural': ['1. Kanban Oficina Técnica', 'Arrastra las tarjetas entre estados para Planos Generales y Montajes de Corte'],
         'kanban-grafica': ['2. Kanban Preimpresión (AAFF)', 'Seguimiento de artes finales y validación gráfica tanto de Estudios como de OTs'],
@@ -1336,6 +1345,7 @@
       });
 
       if (currentView === 'dashboard') renderDashboard(filtered);
+      else if (currentView === 'facturacion') renderFacturacion();
       else if (currentView === 'tabla') renderTabla(filtered);
       else if (currentView === 'kanban-estructural') renderKanbanEstructural(filtered);
       else if (currentView === 'kanban-grafica') renderKanbanGrafica(filtered);
@@ -1626,9 +1636,13 @@
 
       const activeList = list.filter(p => !p.finalizado);
       const urgentWorks = activeList.filter(p => p.urgente);
+      const todayKey=localDateKey(new Date());
       const upcomingDeliveries = activeList
-        .filter(p => Boolean(p.fechaEntrega))
+        .filter(p => !p.urgente && Boolean(p.fechaEntrega) && p.fechaEntrega>=todayKey)
         .sort((a, b) => a.fechaEntrega.localeCompare(b.fechaEntrega));
+      const upcomingIds=new Set(upcomingDeliveries.map(p=>p.id));
+      const studyWorks=activeList.filter(p=>!p.urgente&&!upcomingIds.has(p.id)&&p.fase==='ESTUDIO');
+      const otWorks=activeList.filter(p=>!p.urgente&&!upcomingIds.has(p.id)&&p.fase==='OT');
 
       const estudiosActivosCount = projects.filter(p => p.fase === 'ESTUDIO' && !p.finalizado).length;
       const otsActivasCount = projects.filter(p => p.fase === 'OT' && !p.finalizado).length;
@@ -1696,27 +1710,51 @@
             <div class="flex items-center justify-between gap-2 pb-3 border-b border-slate-100 dark:border-slate-800">
               <div class="flex items-center gap-2.5">
                 <span class="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs"><i class="fa-solid fa-list-check"></i></span>
-                <div><h3 class="font-extrabold text-sm text-slate-900 dark:text-white">Prioridades urgentes y próximas entregas</h3><p class="text-[11px] text-slate-500 dark:text-slate-400">Un único panel · ordenado por urgencia y fecha</p></div>
+                <div><h3 class="font-extrabold text-sm text-slate-900 dark:text-white">Prioridades y trabajos en curso</h3><p class="text-[11px] text-slate-500 dark:text-slate-400">Urgente · próxima entrega · en estudio · en OT</p></div>
               </div>
               <button onclick="switchView('tabla')" class="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline shrink-0 cursor-pointer">Ver tabla →</button>
             </div>
             <div class="grid grid-cols-2 gap-2 py-3">
-              <div class="rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 p-3"><div class="flex items-center gap-2 text-rose-700 dark:text-rose-300 text-xs font-extrabold"><i class="fa-solid fa-fire"></i> Urgentes <span class="ml-auto rounded-full bg-rose-100 dark:bg-rose-900 px-2 py-0.5">${urgentWorks.length}</span></div></div>
-              <div class="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 p-3"><div class="flex items-center gap-2 text-amber-700 dark:text-amber-300 text-xs font-extrabold"><i class="fa-solid fa-truck-fast"></i> Con entrega <span class="ml-auto rounded-full bg-amber-100 dark:bg-amber-900 px-2 py-0.5">${upcomingDeliveries.length}</span></div></div>
+              <div class="rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 p-3"><div class="flex items-center gap-2 text-rose-700 dark:text-rose-300 text-xs font-extrabold"><i class="fa-solid fa-fire"></i> Urgente <span class="ml-auto rounded-full bg-rose-100 dark:bg-rose-900 px-2 py-0.5">${urgentWorks.length}</span></div></div>
+              <div class="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 p-3"><div class="flex items-center gap-2 text-amber-700 dark:text-amber-300 text-xs font-extrabold"><i class="fa-solid fa-truck-fast"></i> Próxima entrega <span class="ml-auto rounded-full bg-amber-100 dark:bg-amber-900 px-2 py-0.5">${upcomingDeliveries.length}</span></div></div>
+              <div class="rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/60 p-3"><div class="flex items-center gap-2 text-indigo-700 dark:text-indigo-300 text-xs font-extrabold"><i class="fa-solid fa-compass-drafting"></i> En estudio <span class="ml-auto rounded-full bg-indigo-100 dark:bg-indigo-900 px-2 py-0.5">${studyWorks.length}</span></div></div>
+              <div class="rounded-xl bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-900/60 p-3"><div class="flex items-center gap-2 text-cyan-700 dark:text-cyan-300 text-xs font-extrabold"><i class="fa-solid fa-industry"></i> En OT <span class="ml-auto rounded-full bg-cyan-100 dark:bg-cyan-900 px-2 py-0.5">${otWorks.length}</span></div></div>
             </div>
             <div class="flex-1 min-h-0 overflow-y-auto custom-scroll space-y-4 pr-1">
-              <div><h4 class="text-[10px] uppercase tracking-wider font-extrabold text-rose-600 dark:text-rose-400 mb-2">Prioridad urgente en planta</h4>
-                <div class="space-y-2">${urgentWorks.length ? urgentWorks.map(p => renderDashboardCard(p, true)).join('') : `<div class="p-4 text-center rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-400"><i class="fa-regular fa-circle-check text-emerald-500 mr-1"></i> No hay trabajos urgentes.</div>`}</div>
-              </div>
-              <div class="pt-3 border-t border-slate-100 dark:border-slate-800"><h4 class="text-[10px] uppercase tracking-wider font-extrabold text-amber-600 dark:text-amber-400 mb-2">Próximas entregas programadas</h4>
-                <div class="space-y-2">${upcomingDeliveries.length ? upcomingDeliveries.map(p => renderDashboardCard(p, false)).join('') : `<div class="p-4 text-center rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-400">No hay entregas pendientes con fecha asignada.</div>`}</div>
-              </div>
+              ${[
+                {title:'Urgente',items:urgentWorks,text:'text-rose-600 dark:text-rose-400',icon:'fa-fire-flame-curved'},
+                {title:'Próxima entrega',items:upcomingDeliveries,text:'text-amber-600 dark:text-amber-400',icon:'fa-truck-fast'},
+                {title:'En estudio',items:studyWorks,text:'text-indigo-600 dark:text-indigo-400',icon:'fa-compass-drafting'},
+                {title:'En OT',items:otWorks,text:'text-cyan-600 dark:text-cyan-400',icon:'fa-industry'}
+              ].map((bucket,index)=>`<div class="${index?'pt-3 border-t border-slate-100 dark:border-slate-800':''}"><h4 class="text-[10px] uppercase tracking-wider font-extrabold ${bucket.text} mb-2"><i class="fa-solid ${bucket.icon} mr-1"></i>${bucket.title}</h4><div class="space-y-2">${bucket.items.length?bucket.items.map(p=>renderDashboardCard(p,bucket.title==='Urgente')).join(''):`<div class="p-3 text-center rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-400">No hay trabajos en esta categoría.</div>`}</div></div>`).join('')}
             </div>
           </section>
           <div class="min-w-0 xl:h-[780px]">${renderCalendarWidget(list)}</div>
         </div>
       `;
     }
+
+    function euro(amount){return new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(Number(amount)||0);}
+    function renderFacturacion(){
+      const ws=document.getElementById('workspace');
+      if(currentUser?.role!=='Administrador'){ws.innerHTML='<div class="p-6 rounded-2xl bg-white dark:bg-slate-900 border dark:border-slate-800 text-sm">Solo Administrador puede consultar la facturación.</div>';return;}
+      const now=new Date(),months=Array.from({length:12},(_,index)=>new Date(now.getFullYear(),now.getMonth()-11+index,1));
+      const monthRows=months.map(month=>{const key=`${month.getFullYear()}-${String(month.getMonth()+1).padStart(2,'0')}`,total=billingDB.filter(item=>String(item.date||'').slice(0,7)===key).reduce((sum,item)=>sum+(Number(item.amount)||0),0);return {key,total,label:month.toLocaleDateString('es-ES',{month:'short'}).replace('.',''),title:month.toLocaleDateString('es-ES',{month:'long',year:'numeric'})};});
+      const maxValue=Math.max(0,...monthRows.map(row=>row.total)),thisMonth=monthRows[monthRows.length-1]?.total||0,yearTotal=billingDB.filter(item=>String(item.date||'').startsWith(String(now.getFullYear()))).reduce((sum,item)=>sum+(Number(item.amount)||0),0);
+      const sorted=[...billingDB].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+      ws.innerHTML=`<div class="space-y-5">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3"><div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-900"><p class="text-[10px] uppercase font-bold tracking-wider text-emerald-700 dark:text-emerald-400">Facturado este mes</p><p class="text-2xl font-extrabold mt-1">${euro(thisMonth)}</p></div><div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-indigo-200 dark:border-indigo-900"><p class="text-[10px] uppercase font-bold tracking-wider text-indigo-700 dark:text-indigo-400">Facturado este año</p><p class="text-2xl font-extrabold mt-1">${euro(yearTotal)}</p></div><div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800"><p class="text-[10px] uppercase font-bold tracking-wider text-slate-500">Facturas registradas</p><p class="text-2xl font-extrabold mt-1">${billingDB.length}</p></div></div>
+        <section class="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800"><div class="flex flex-wrap justify-between items-start gap-2 mb-5"><div><h3 class="font-extrabold text-sm">Facturación de los últimos 12 meses</h3><p class="text-[11px] text-slate-500">Suma de importes según la fecha de cada factura · euros</p></div><i class="fa-solid fa-chart-column text-emerald-500 text-lg"></i></div><div class="h-56 flex items-end gap-2 sm:gap-3 border-b border-slate-200 dark:border-slate-700 overflow-x-auto">${monthRows.map(row=>{const height=row.total?Math.max(5,Math.round(row.total/maxValue*100)):0;return `<div class="h-full min-w-[34px] sm:min-w-0 flex-1 flex flex-col justify-end items-center gap-1" title="${escapeAttr(row.title)}: ${escapeAttr(euro(row.total))}"><span class="text-[9px] text-slate-500 whitespace-nowrap">${row.total?escapeHtml(euro(row.total)) : ''}</span><div class="w-full max-w-12 rounded-t-lg bg-gradient-to-t from-indigo-600 to-emerald-400 transition-all" style="height:${height}%" aria-label="${escapeAttr(row.title)} ${escapeAttr(euro(row.total))}"></div><span class="text-[10px] capitalize text-slate-500 pb-2">${escapeHtml(row.label)}</span></div>`;}).join('')}</div>${billingDB.length?'':'<p class="mt-4 text-xs text-slate-500">Aún no hay facturas. Añade una para empezar a ver la evolución mensual.</p>'}</section>
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-5"><form id="billing-form" onsubmit="saveBillingRecord(event)" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 space-y-3"><h3 id="billing-form-title" class="font-extrabold text-sm">Registrar factura</h3><input id="bill-id" type="hidden"><label class="block text-xs font-bold">Fecha de factura<input id="bill-date" type="date" required value="${localDateKey(now)}" class="mt-1 w-full border rounded-xl p-2.5 bg-white dark:bg-slate-800 dark:border-slate-700"></label><label class="block text-xs font-bold">Cliente<input id="bill-client" required maxlength="120" list="billing-clients" class="mt-1 w-full border rounded-xl p-2.5 bg-white dark:bg-slate-800 dark:border-slate-700"><datalist id="billing-clients">${clientesDB.map(client=>`<option value="${escapeAttr(client.nombre)}">`).join('')}</datalist></label><label class="block text-xs font-bold">Descripción<input id="bill-description" required maxlength="180" placeholder="Ej.: Factura OT-2026-014" class="mt-1 w-full border rounded-xl p-2.5 bg-white dark:bg-slate-800 dark:border-slate-700"></label><label class="block text-xs font-bold">OT vinculada (opcional)<select id="bill-project" class="mt-1 w-full border rounded-xl p-2.5 bg-white dark:bg-slate-800 dark:border-slate-700"><option value="">Sin OT vinculada</option>${projects.filter(p=>p.fase==='OT').map(p=>`<option value="${escapeAttr(p.id)}">${escapeHtml(p.codigoOT||p.id)} · ${escapeHtml(p.cliente)}</option>`).join('')}</select></label><label class="block text-xs font-bold">Importe (€)<input id="bill-amount" type="number" required min="0.01" step="0.01" class="mt-1 w-full border rounded-xl p-2.5 bg-white dark:bg-slate-800 dark:border-slate-700"></label><div class="flex gap-2"><button class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl p-2.5 font-bold text-xs"><i class="fa-solid fa-floppy-disk mr-1"></i>Guardar factura</button><button id="bill-cancel-edit" type="button" onclick="resetBillingForm()" class="hidden px-3 rounded-xl border text-xs font-bold">Cancelar</button></div><p class="text-[10px] text-slate-500">Los registros se guardan en la pestaña Billing de Google Sheets.</p></form>
+          <section class="xl:col-span-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5"><div class="flex items-center justify-between gap-2 mb-3"><h3 class="font-extrabold text-sm">Facturas registradas</h3><span class="text-[10px] text-slate-500">${billingDB.length} registros</span></div>${sorted.length?`<div class="overflow-x-auto"><table class="w-full text-left text-xs"><thead><tr class="text-[10px] uppercase text-slate-500 border-b dark:border-slate-700"><th class="py-2 pr-3">Fecha</th><th class="py-2 pr-3">Cliente y concepto</th><th class="py-2 pr-3 text-right">Importe</th><th></th></tr></thead><tbody>${sorted.map(item=>{const project=projects.find(p=>p.id===item.projectId);return `<tr class="border-b last:border-0 dark:border-slate-800"><td class="py-3 pr-3 whitespace-nowrap">${escapeHtml(formatShortDate(item.date))}</td><td class="py-3 pr-3"><p class="font-bold">${escapeHtml(item.client)}</p><p class="text-[10px] text-slate-500">${escapeHtml(item.description)}${project?' · '+escapeHtml(project.codigoOT||project.id):''}${String(item.id).startsWith('B-DEMO-')?' · Demo':''}</p></td><td class="py-3 pr-3 text-right font-bold whitespace-nowrap">${escapeHtml(euro(item.amount))}</td><td class="py-3 text-right whitespace-nowrap"><button onclick="editBillingRecord('${escapeAttr(item.id)}')" class="p-2 text-indigo-600" title="Editar"><i class="fa-solid fa-pen"></i></button><button onclick="deleteBillingRecord('${escapeAttr(item.id)}')" class="p-2 text-rose-600" title="Eliminar"><i class="fa-solid fa-trash"></i></button></td></tr>`;}).join('')}</tbody></table></div>`:'<p class="text-xs text-slate-500 py-8 text-center">Todavía no hay registros de facturación.</p>'}</section>
+        </div>
+        <p class="text-[10px] leading-relaxed text-slate-500">Vista administrativa. Los datos se agrupan por mes de emisión de factura; los importes de muestra se pueden eliminar con **Borrar Demo**.</p>
+      </div>`;
+    }
+    function resetBillingForm(){const form=document.getElementById('billing-form');if(!form)return;form.reset();document.getElementById('bill-id').value='';document.getElementById('bill-date').value=localDateKey(new Date());document.getElementById('billing-form-title').textContent='Registrar factura';document.getElementById('bill-cancel-edit').classList.add('hidden');}
+    function editBillingRecord(id){const item=billingDB.find(row=>row.id===id);if(!item)return;document.getElementById('bill-id').value=item.id;document.getElementById('bill-date').value=item.date;document.getElementById('bill-client').value=item.client;document.getElementById('bill-description').value=item.description;document.getElementById('bill-project').value=item.projectId||'';document.getElementById('bill-amount').value=item.amount;document.getElementById('billing-form-title').textContent='Editar factura';document.getElementById('bill-cancel-edit').classList.remove('hidden');document.getElementById('billing-form').scrollIntoView({behavior:'smooth',block:'start'});}
+    async function saveBillingRecord(event){event.preventDefault();if(currentUser?.role!=='Administrador')return;const id=document.getElementById('bill-id').value||`B-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,record={id,date:document.getElementById('bill-date').value,client:document.getElementById('bill-client').value.trim(),description:document.getElementById('bill-description').value.trim(),projectId:document.getElementById('bill-project').value,amount:Number(document.getElementById('bill-amount').value)};const items=[...billingDB.filter(item=>item.id!==id),record];try{billingDB=await api('saveBilling',{items});renderCurrentView();showToast('Factura guardada en Google Sheets');}catch(err){showToast('No se pudo guardar la factura: '+err.message);}}
+    async function deleteBillingRecord(id){if(currentUser?.role!=='Administrador'||!confirm('¿Eliminar este registro de facturación?'))return;try{billingDB=await api('saveBilling',{items:billingDB.filter(item=>item.id!==id)});renderCurrentView();showToast('Factura eliminada');}catch(err){showToast('No se pudo eliminar: '+err.message);}}
 
     // ==================== 2. TABLA MAESTRA (ESCRITORIO + TARJETAS MÓVILES) ====================
     function renderTabla(list) {
@@ -3493,8 +3531,8 @@
     let currentUser = null;
     let authToken = '';
     function setLoginLoading(isLoading){
-      const button=document.getElementById('login-submit'),label=document.getElementById('login-submit-label'),status=document.getElementById('login-loading');
-      if(button)button.disabled=isLoading;if(label)label.textContent=isLoading?'Consultando…':'Entrar';if(status)status.classList.toggle('hidden',!isLoading);
+      const button=document.getElementById('login-submit'),label=document.getElementById('login-submit-label'),icon=document.getElementById('login-submit-icon');
+      if(button)button.disabled=isLoading;if(label)label.textContent=isLoading?'Consultando…':'Entrar';if(icon)icon.classList.toggle('hidden',!isLoading);
     }
     async function loginLocal(e){
       e.preventDefault(); const username=document.getElementById('login-user').value.trim(); const password=document.getElementById('login-pass').value;
@@ -3503,7 +3541,7 @@
       catch(err){if(error){error.classList.remove('hidden');error.textContent=err.message||'Usuario o contraseña incorrectos';}}
       finally{setLoginLoading(false);}
     }
-    async function refreshState({notifyIncoming=false}={}){const previousIds=new Set(notifications.map(n=>n.id));const result=await api('load');projects=normalizeProjectsList(result.projects||[]);clientesDB=normalizeClientsList(result.clients||[]);comerciales=result.comerciales||[];appUsers=result.users||appUsers;companyConfig=result.company||companyConfig;applyCompanyConfig();notifications=result.notifications||notifications;updateBadges();updateNotificationCenter();if(notifyIncoming)notifyNewNotifications(previousIds);}
+    async function refreshState({notifyIncoming=false}={}){const previousIds=new Set(notifications.map(n=>n.id));const result=await api('load');projects=normalizeProjectsList(result.projects||[]);clientesDB=normalizeClientsList(result.clients||[]);billingDB=Array.isArray(result.billing)?result.billing:billingDB;comerciales=result.comerciales||[];appUsers=result.users||appUsers;companyConfig=result.company||companyConfig;applyCompanyConfig();notifications=result.notifications||notifications;updateBadges();updateNotificationCenter();if(notifyIncoming)notifyNewNotifications(previousIds);}
     function applyCompanyConfig(){
       const name=String(companyConfig.name||'ADAEQUO').trim()||'ADAEQUO';
       const label=document.getElementById('company-name'),loginLabel=document.getElementById('login-company-name'),loginIcon=document.getElementById('login-company-icon'),iconBox=document.getElementById('company-icon');
@@ -3534,7 +3572,7 @@
       catch(err){showToast('No se pudieron actualizar los datos: '+err.message);if(/sesión|desactivado/i.test(err.message||''))logoutLocal();}
       finally{setRefreshIndicator(false);}
     }
-    function applyRoleAccess(){const admin=currentUser?.role==='Administrador';document.querySelectorAll('[onclick*="openNewProjectModal"]').forEach(el=>el.classList.remove('hidden'));const userNav=document.getElementById('nav-usuarios');if(userNav)userNav.classList.toggle('hidden',!admin);document.querySelectorAll('[onclick*="resetDemo"]').forEach(el=>el.classList.toggle('hidden',!admin));}
+    function applyRoleAccess(){const admin=currentUser?.role==='Administrador';document.querySelectorAll('[onclick*="openNewProjectModal"]').forEach(el=>el.classList.remove('hidden'));const userNav=document.getElementById('nav-usuarios'),billingNav=document.getElementById('nav-facturacion');if(userNav)userNav.classList.toggle('hidden',!admin);if(billingNav)billingNav.classList.toggle('hidden',!admin);document.querySelectorAll('[onclick*="resetDemo"]').forEach(el=>el.classList.toggle('hidden',!admin));}
     function renderUsuarios(){
       if(currentUser?.role!=='Administrador'){document.getElementById('workspace').innerHTML='<div class="p-6 rounded-2xl bg-white dark:bg-slate-900 border dark:border-slate-800 text-sm">Solo Administrador puede gestionar usuarios.</div>';return;}
       const ws=document.getElementById('workspace');
@@ -3596,7 +3634,7 @@
       switchView('perfil');
     }
     function logoutLocal(){
-      if(authToken)api('logout').catch(()=>{});authToken='';currentUser=null;appUsers=[];projects=[];clientesDB=[];comerciales=[];notifications=[];
+      if(authToken)api('logout').catch(()=>{});authToken='';currentUser=null;appUsers=[];projects=[];clientesDB=[];billingDB=[];comerciales=[];notifications=[];
       document.getElementById('profile-menu')?.classList.add('hidden');
       document.getElementById('login-pass').value='';
       document.getElementById('login-error').classList.add('hidden');
